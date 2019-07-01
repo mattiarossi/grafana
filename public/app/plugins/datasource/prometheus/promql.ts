@@ -3,6 +3,7 @@
 import { CompletionItem } from 'app/types/explore';
 
 export const RATE_RANGES: CompletionItem[] = [
+  { label: '$__interval', sortText: '$__interval' },
   { label: '1m', sortText: '00:01:00' },
   { label: '5m', sortText: '00:05:00' },
   { label: '10m', sortText: '00:10:00' },
@@ -386,9 +387,10 @@ const tokenizer = {
     lookbehind: true,
     inside: {
       'label-key': {
-        pattern: /[^,\s][^,]*[^,\s]*/,
+        pattern: /[^(),\s][^,)]*[^),\s]*/,
         alias: 'attr-name',
       },
+      punctuation: /[()]/,
     },
   },
   'context-labels': {
@@ -403,6 +405,7 @@ const tokenizer = {
         greedy: true,
         alias: 'attr-value',
       },
+      punctuation: /[{]/,
     },
   },
   function: new RegExp(`\\b(?:${FUNCTIONS.map(f => f.label).join('|')})(?=\\s*\\()`, 'i'),

@@ -1,10 +1,12 @@
 import './bucket_agg';
 import './metric_agg';
+import './pipeline_variables';
 
 import angular from 'angular';
 import _ from 'lodash';
 import * as queryDef from './query_def';
 import { QueryCtrl } from 'app/plugins/sdk';
+import { ElasticsearchAggregation } from './types';
 
 export class ElasticQueryCtrl extends QueryCtrl {
   static templateUrl = 'partials/query.editor.html';
@@ -52,7 +54,7 @@ export class ElasticQueryCtrl extends QueryCtrl {
   }
 
   getCollapsedText() {
-    const metricAggs = this.target.metrics;
+    const metricAggs: ElasticsearchAggregation[] = this.target.metrics;
     const bucketAggs = this.target.bucketAggs;
     const metricAggTypes = queryDef.getMetricAggTypes(this.esVersion);
     const bucketAggTypes = queryDef.bucketAggTypes;
@@ -65,20 +67,23 @@ export class ElasticQueryCtrl extends QueryCtrl {
     text += 'Metrics: ';
 
     _.each(metricAggs, (metric, index) => {
-      const aggDef = _.find(metricAggTypes, { value: metric.type });
+      const aggDef: any = _.find(metricAggTypes, { value: metric.type });
       text += aggDef.text + '(';
       if (aggDef.requiresField) {
         text += metric.field;
       }
+      if (aggDef.supportsMultipleBucketPaths) {
+        text += metric.settings.script.replace(new RegExp('params.', 'g'), '');
+      }
       text += '), ';
     });
 
-    _.each(bucketAggs, (bucketAgg, index) => {
+    _.each(bucketAggs, (bucketAgg: any, index: number) => {
       if (index === 0) {
         text += ' Group by: ';
       }
 
-      const aggDef = _.find(bucketAggTypes, { value: bucketAgg.type });
+      const aggDef: any = _.find(bucketAggTypes, { value: bucketAgg.type });
       text += aggDef.text + '(';
       if (aggDef.requiresField) {
         text += bucketAgg.field;

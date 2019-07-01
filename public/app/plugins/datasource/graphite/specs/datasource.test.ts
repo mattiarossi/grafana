@@ -1,8 +1,8 @@
 import { GraphiteDatasource } from '../datasource';
-import moment from 'moment';
 import _ from 'lodash';
 import $q from 'q';
 import { TemplateSrvStub } from 'test/specs/helpers';
+import { dateTime } from '@grafana/ui/src/utils/moment_wrapper';
 
 describe('graphiteDatasource', () => {
   const ctx: any = {
@@ -86,8 +86,8 @@ describe('graphiteDatasource', () => {
         tags: 'tag1',
       },
       range: {
-        from: moment(1432288354),
-        to: moment(1432288401),
+        from: dateTime(1432288354),
+        to: dateTime(1432288401),
       },
       rangeRaw: { from: 'now-24h', to: 'now' },
     };
@@ -302,6 +302,18 @@ describe('graphiteDatasource', () => {
       expect(requestOptions.params.tag).toBe('server');
       expect(requestOptions.params.expr).toEqual(['server=~backend*']);
       expect(results).not.toBe(null);
+    });
+
+    it('/metrics/find should be POST', () => {
+      ctx.templateSrv.setGrafanaVariable('foo', 'bar');
+      ctx.ds.metricFindQuery('[[foo]]').then(data => {
+        results = data;
+      });
+      expect(requestOptions.url).toBe('/api/datasources/proxy/1/metrics/find');
+      expect(requestOptions.method).toEqual('POST');
+      expect(requestOptions.headers).toHaveProperty('Content-Type', 'application/x-www-form-urlencoded');
+      expect(requestOptions.data).toMatch(`query=bar`);
+      expect(requestOptions).toHaveProperty('params');
     });
   });
 });

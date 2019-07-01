@@ -1,13 +1,13 @@
-import React, { SFC } from 'react';
+import React, { FC } from 'react';
 
 interface Props {
-  onValueChange: (e) => void;
+  onValueChange: (e: any) => void;
   options: any[];
   value: string;
   label: string;
 }
 
-const SimpleSelect: SFC<Props> = props => {
+const SimpleSelect: FC<Props> = props => {
   const { label, onValueChange, value, options } = props;
   return (
     <div className="gf-form max-width-21">

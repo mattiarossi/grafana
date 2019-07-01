@@ -27,39 +27,41 @@ installation.
 
 ```bash
 wget <debian package url>
-sudo apt-get install -y adduser libfontconfig
+sudo apt-get install -y adduser libfontconfig1
 sudo dpkg -i grafana_<version>_amd64.deb
 ```
 
 Example:
 
 ```bash
-wget https://s3-us-west-2.amazonaws.com/grafana-releases/release/grafana_5.1.4_amd64.deb
-sudo apt-get install -y adduser libfontconfig
-sudo dpkg -i grafana_5.1.4_amd64.deb
+wget https://dl.grafana.com/oss/release/grafana_5.4.2_amd64.deb
+sudo apt-get install -y adduser libfontconfig1
+sudo dpkg -i grafana_5.4.2_amd64.deb
 ```
 
 ## APT Repository
 
-Add the following line to your `/etc/apt/sources.list` file.
-
+The command `add-apt-repository` isn't a default app on Debian 9 and requires
 ```bash
-deb https://packagecloud.io/grafana/stable/debian/ stretch main
+apt-get install -y software-properties-common
 ```
 
-Use the above line even if you are on Ubuntu or another Debian version.
-There is also a testing repository if you want beta or release
-candidates.
+Install the repository for stable releases
 
 ```bash
-deb https://packagecloud.io/grafana/testing/debian/ stretch main
+sudo add-apt-repository "deb https://packages.grafana.com/oss/deb stable main"
 ```
 
-Then add the [Package Cloud](https://packagecloud.io/grafana) key. This
-allows you to install signed packages.
+There is a separate repository if you want beta releases.
 
 ```bash
-curl https://packagecloud.io/gpg.key | sudo apt-key add -
+sudo add-apt-repository "deb https://packages.grafana.com/oss/deb beta main"
+```
+
+Use the above line even if you are on Ubuntu or another Debian version. Then add our gpg key. This allows you to install signed packages.
+
+```bash
+sudo wget -q -O - https://packages.grafana.com/gpg.key | apt-key add -
 ```
 
 Update your Apt repositories and install Grafana
@@ -149,10 +151,10 @@ those options.
 
 ### Adding data sources
 
-- [Graphite]({{< relref "features/datasources/graphite.md" >}})
-- [InfluxDB]({{< relref "features/datasources/influxdb.md" >}})
-- [OpenTSDB]({{< relref "features/datasources/opentsdb.md" >}})
-- [Prometheus]({{< relref "features/datasources/prometheus.md" >}})
+- [Graphite]({{< relref "../features/datasources/graphite.md" >}})
+- [InfluxDB]({{< relref "../features/datasources/influxdb.md" >}})
+- [OpenTSDB]({{< relref "../features/datasources/opentsdb.md" >}})
+- [Prometheus]({{< relref "../features/datasources/prometheus.md" >}})
 
 ## Installing from binary tar file
 
