@@ -1,10 +1,11 @@
 package sqlstore
 
 import (
-	"github.com/grafana/grafana/pkg/models"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/grafana/grafana/pkg/models"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestApiKeyDataAccess(t *testing.T) {
@@ -54,7 +55,7 @@ func TestApiKeyDataAccess(t *testing.T) {
 			assert.True(t, *query.Result.Expires >= timeNow().Unix())
 
 			// timeNow() has been called twice since creation; once by AddApiKey and once by GetApiKeyByName
-			// therefore two seconds should be subtracted by next value retuned by timeNow()
+			// therefore two seconds should be subtracted by next value returned by timeNow()
 			// that equals the number by which timeSeed has been advanced
 			then := timeNow().Add(-2 * time.Second)
 			expected := then.Add(1 * time.Hour).UTC().Unix()
@@ -91,7 +92,7 @@ func TestApiKeyDataAccess(t *testing.T) {
 			// advance mocked getTime by 1s
 			timeNow()
 
-			query := models.GetApiKeysQuery{OrgId: 1, IncludeInvalid: false}
+			query := models.GetApiKeysQuery{OrgId: 1, IncludeExpired: false}
 			err = GetApiKeys(&query)
 			assert.Nil(t, err)
 
@@ -101,7 +102,7 @@ func TestApiKeyDataAccess(t *testing.T) {
 				}
 			}
 
-			query = models.GetApiKeysQuery{OrgId: 1, IncludeInvalid: true}
+			query = models.GetApiKeysQuery{OrgId: 1, IncludeExpired: true}
 			err = GetApiKeys(&query)
 			assert.Nil(t, err)
 
@@ -112,6 +113,26 @@ func TestApiKeyDataAccess(t *testing.T) {
 				}
 			}
 			assert.True(t, found)
+		})
+	})
+}
+
+func TestApiKeyErrors(t *testing.T) {
+	mockTimeNow()
+	defer resetTimeNow()
+
+	t.Run("Testing API Duplicate Key Errors", func(t *testing.T) {
+		InitTestDB(t)
+		t.Run("Given saved api key", func(t *testing.T) {
+			cmd := models.AddApiKeyCommand{OrgId: 0, Name: "duplicate", Key: "asd"}
+			err := AddApiKey(&cmd)
+			assert.Nil(t, err)
+
+			t.Run("Add API Key with existing Org ID and Name", func(t *testing.T) {
+				cmd := models.AddApiKeyCommand{OrgId: 0, Name: "duplicate", Key: "asd"}
+				err = AddApiKey(&cmd)
+				assert.EqualError(t, err, models.ErrDuplicateApiKey.Error())
+			})
 		})
 	})
 }

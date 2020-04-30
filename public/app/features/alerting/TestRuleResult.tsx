@@ -1,14 +1,15 @@
 import React, { PureComponent } from 'react';
-import { JSONFormatter } from 'app/core/components/JSONFormatter/JSONFormatter';
+import { LoadingPlaceholder, JSONFormatter, Icon } from '@grafana/ui';
+
 import appEvents from 'app/core/app_events';
 import { CopyToClipboard } from 'app/core/components/CopyToClipboard/CopyToClipboard';
+import { DashboardModel, PanelModel } from '../dashboard/state';
 import { getBackendSrv } from '@grafana/runtime';
-import { DashboardModel } from '../dashboard/state/DashboardModel';
-import { LoadingPlaceholder } from '@grafana/ui/src';
+import { AppEvents } from '@grafana/data';
 
 export interface Props {
-  panelId: number;
   dashboard: DashboardModel;
+  panel: PanelModel;
 }
 
 interface State {
@@ -32,15 +33,24 @@ export class TestRuleResult extends PureComponent<Props, State> {
   }
 
   async testRule() {
-    const { panelId, dashboard } = this.props;
-    const payload = { dashboard: dashboard.getSaveModelClone(), panelId };
+    const { dashboard, panel } = this.props;
+
+    // dashboard save model
+    const model = dashboard.getSaveModelClone();
+
+    // now replace panel to get current edits
+    model.panels = model.panels.map(dashPanel => {
+      return dashPanel.id === panel.editSourceId ? panel.getSaveModel() : dashPanel;
+    });
+
+    const payload = { dashboard: model, panelId: panel.id };
 
     this.setState({ isLoading: true });
     const testRuleResponse = await getBackendSrv().post(`/api/alerts/test`, payload);
     this.setState({ isLoading: false, testRuleResponse });
   }
 
-  setFormattedJson = formattedJson => {
+  setFormattedJson = (formattedJson: any) => {
     this.formattedJson = formattedJson;
   };
 
@@ -49,7 +59,7 @@ export class TestRuleResult extends PureComponent<Props, State> {
   };
 
   onClipboardSuccess = () => {
-    appEvents.emit('alert-success', ['Content copied to clipboard']);
+    appEvents.emit(AppEvents.alertSuccess, ['Content copied to clipboard']);
   };
 
   onToggleExpand = () => {
@@ -73,12 +83,12 @@ export class TestRuleResult extends PureComponent<Props, State> {
 
     const collapse = (
       <>
-        <i className="fa fa-minus-square-o" /> Collapse All
+        <Icon name="minus-circle" /> Collapse All
       </>
     );
     const expand = (
       <>
-        <i className="fa fa-plus-square-o" /> Expand All
+        <Icon name="plus-circle" /> Expand All
       </>
     );
     return allNodesExpanded ? collapse : expand;
@@ -104,7 +114,7 @@ export class TestRuleResult extends PureComponent<Props, State> {
             text={this.getTextForClipboard}
             onSuccess={this.onClipboardSuccess}
           >
-            <i className="fa fa-clipboard" /> Copy to Clipboard
+            <Icon name="copy" /> Copy to Clipboard
           </CopyToClipboard>
         </div>
 

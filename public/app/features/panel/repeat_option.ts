@@ -1,4 +1,7 @@
 import { coreModule } from 'app/core/core';
+import { VariableSrv } from 'app/features/templating/variable_srv';
+import { getConfig } from '../../core/config';
+import { getVariables } from '../variables/state/selectors';
 
 const template = `
 <div class="gf-form-select-wrapper max-width-18">
@@ -8,19 +11,27 @@ const template = `
 `;
 
 /** @ngInject */
-function dashRepeatOptionDirective(variableSrv) {
+function dashRepeatOptionDirective(variableSrv: VariableSrv) {
   return {
     restrict: 'E',
     template: template,
     scope: {
       panel: '=',
     },
-    link: (scope, element) => {
+    link: (scope: any, element: JQuery) => {
       element.css({ display: 'block', width: '100%' });
 
-      scope.variables = variableSrv.variables.map(item => {
-        return { text: item.name, value: item.name };
-      });
+      if (getConfig().featureToggles.newVariables) {
+        scope.variables = getVariables().map((item: any) => {
+          return { text: item.name, value: item.name };
+        });
+      }
+
+      if (!getConfig().featureToggles.newVariables) {
+        scope.variables = variableSrv.variables.map((item: any) => {
+          return { text: item.name, value: item.name };
+        });
+      }
 
       if (scope.variables.length === 0) {
         scope.variables.unshift({

@@ -1,12 +1,12 @@
 import _ from 'lodash';
 import TableModel from 'app/core/table_model';
-import { TimeSeries, FieldType } from '@grafana/ui';
+import { TimeSeries, FieldType } from '@grafana/data';
 import { TemplateSrv } from 'app/features/templating/template_srv';
 
 export class ResultTransformer {
   constructor(private templateSrv: TemplateSrv) {}
 
-  transform(response: any, options: any): any[] {
+  transform(response: any, options: any): Array<TableModel | TimeSeries> {
     const prometheusResult = response.data.data.result;
 
     if (options.format === 'table') {
@@ -46,7 +46,7 @@ export class ResultTransformer {
 
     metricLabel = this.createMetricLabel(metricData.metric, options);
 
-    const stepMs = parseInt(options.step, 10) * 1000;
+    const stepMs = parseFloat(options.step) * 1000;
     let baseTimestamp = start * 1000;
 
     if (metricData.values === undefined) {
@@ -75,12 +75,17 @@ export class ResultTransformer {
     return {
       datapoints: dps,
       query: options.query,
+      refId: options.refId,
+      meta: options.meta,
       target: metricLabel,
+      tags: metricData.metric,
     };
   }
 
-  transformMetricDataToTable(md: any, resultCount: number, refId: string, valueWithRefId?: boolean) {
+  transformMetricDataToTable(md: any, resultCount: number, refId: string, valueWithRefId?: boolean): TableModel {
     const table = new TableModel();
+    table.refId = refId;
+
     let i: number, j: number;
     const metricLabels: { [key: string]: number } = {};
 
@@ -140,7 +145,7 @@ export class ResultTransformer {
     let metricLabel = null;
     metricLabel = this.createMetricLabel(md.metric, options);
     dps.push([parseFloat(md.value[1]), md.value[0] * 1000]);
-    return { target: metricLabel, datapoints: dps, labels: md.metric };
+    return { target: metricLabel, datapoints: dps, tags: md.metric, refId: options.refId, meta: options.meta };
   }
 
   createMetricLabel(labelData: { [key: string]: string }, options: any) {
@@ -162,7 +167,7 @@ export class ResultTransformer {
       if (aliasData[g1]) {
         return aliasData[g1];
       }
-      return g1;
+      return '';
     });
   }
 

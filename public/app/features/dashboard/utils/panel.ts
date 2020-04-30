@@ -4,12 +4,12 @@ import store from 'app/core/store';
 // Models
 import { DashboardModel } from 'app/features/dashboard/state/DashboardModel';
 import { PanelModel } from 'app/features/dashboard/state/PanelModel';
-import { TimeRange } from '@grafana/ui';
+import { TimeRange, AppEvents } from '@grafana/data';
 
 // Utils
 import { isString as _isString } from 'lodash';
-import * as rangeUtil from '@grafana/ui/src/utils/rangeutil';
-import * as dateMath from '@grafana/ui/src/utils/datemath';
+import { rangeUtil } from '@grafana/data';
+import { dateMath } from '@grafana/data';
 import appEvents from 'app/core/app_events';
 import config from 'app/core/config';
 
@@ -18,6 +18,9 @@ import templateSrv from 'app/features/templating/template_srv';
 
 // Constants
 import { LS_PANEL_COPY_KEY, PANEL_BORDER } from 'app/core/constants';
+import { CoreEvents } from 'app/types';
+
+import { ShareModal } from 'app/features/dashboard/components/ShareModal';
 
 export const removePanel = (dashboard: DashboardModel, panel: PanelModel, ask: boolean) => {
   // confirm deletion
@@ -25,11 +28,11 @@ export const removePanel = (dashboard: DashboardModel, panel: PanelModel, ask: b
     const text2 = panel.alert ? 'Panel includes an alert rule, removing panel will also remove alert rule' : null;
     const confirmText = panel.alert ? 'YES' : null;
 
-    appEvents.emit('confirm-modal', {
+    appEvents.emit(CoreEvents.showConfirmModal, {
       title: 'Remove Panel',
       text: 'Are you sure you want to remove this panel?',
       text2: text2,
-      icon: 'fa-trash',
+      icon: 'trash-alt',
       confirmText: confirmText,
       yesText: 'Remove',
       onConfirm: () => removePanel(dashboard, panel, false),
@@ -45,45 +48,13 @@ export const duplicatePanel = (dashboard: DashboardModel, panel: PanelModel) => 
 
 export const copyPanel = (panel: PanelModel) => {
   store.set(LS_PANEL_COPY_KEY, JSON.stringify(panel.getSaveModel()));
-  appEvents.emit('alert-success', ['Panel copied. Open Add Panel to paste']);
-};
-
-const replacePanel = (dashboard: DashboardModel, newPanel: PanelModel, oldPanel: PanelModel) => {
-  const index = dashboard.panels.findIndex(panel => {
-    return panel.id === oldPanel.id;
-  });
-
-  const deletedPanel = dashboard.panels.splice(index, 1);
-  dashboard.events.emit('panel-removed', deletedPanel);
-
-  newPanel = new PanelModel(newPanel);
-  newPanel.id = oldPanel.id;
-
-  dashboard.panels.splice(index, 0, newPanel);
-  dashboard.sortPanelsByGridPos();
-  dashboard.events.emit('panel-added', newPanel);
-};
-
-export const editPanelJson = (dashboard: DashboardModel, panel: PanelModel) => {
-  const model = {
-    object: panel.getSaveModel(),
-    updateHandler: (newPanel: PanelModel, oldPanel: PanelModel) => {
-      replacePanel(dashboard, newPanel, oldPanel);
-    },
-    canUpdate: dashboard.meta.canEdit,
-    enableCopy: true,
-  };
-
-  appEvents.emit('show-modal', {
-    src: 'public/app/partials/edit_json.html',
-    model: model,
-  });
+  appEvents.emit(AppEvents.alertSuccess, ['Panel copied. Open Add Panel to paste']);
 };
 
 export const sharePanel = (dashboard: DashboardModel, panel: PanelModel) => {
-  appEvents.emit('show-modal', {
-    src: 'public/app/features/dashboard/components/ShareModal/template.html',
-    model: {
+  appEvents.emit(CoreEvents.showModalReact, {
+    component: ShareModal,
+    props: {
       dashboard: dashboard,
       panel: panel,
     },
@@ -172,10 +143,7 @@ export function getResolution(panel: PanelModel): number {
 }
 
 export function calculateInnerPanelHeight(panel: PanelModel, containerHeight: number): number {
-  return (
-    containerHeight -
-    (panel.hasTitle() ? config.theme.panelHeaderHeight : 0) -
-    config.theme.panelPadding * 2 -
-    PANEL_BORDER
-  );
+  const chromePadding = panel.plugin && panel.plugin.noPadding ? 0 : config.theme.panelPadding * 2;
+  const headerHeight = panel.hasTitle() ? config.theme.panelHeaderHeight : 0;
+  return containerHeight - headerHeight - chromePadding - PANEL_BORDER;
 }

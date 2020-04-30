@@ -2,33 +2,34 @@ import _ from 'lodash';
 import React, { PureComponent } from 'react';
 
 // Types
-import { FormLabel, Select, SelectOptionItem, Switch } from '@grafana/ui';
-import { QueryEditorProps, DataSourceStatus } from '@grafana/ui/src/types';
+import { InlineFormLabel, LegacyForms, Select } from '@grafana/ui';
+import { SelectableValue, QueryEditorProps } from '@grafana/data';
+
+const { Switch } = LegacyForms;
 
 import { PrometheusDatasource } from '../datasource';
 import { PromQuery, PromOptions } from '../types';
 
 import PromQueryField from './PromQueryField';
 import PromLink from './PromLink';
-
 export type Props = QueryEditorProps<PrometheusDatasource, PromQuery, PromOptions>;
 
-const FORMAT_OPTIONS: Array<SelectOptionItem<string>> = [
+const FORMAT_OPTIONS: Array<SelectableValue<string>> = [
   { label: 'Time series', value: 'time_series' },
   { label: 'Table', value: 'table' },
   { label: 'Heatmap', value: 'heatmap' },
 ];
 
-const INTERVAL_FACTOR_OPTIONS: Array<SelectOptionItem<number>> = _.map([1, 2, 3, 4, 5, 10], (value: number) => ({
+const INTERVAL_FACTOR_OPTIONS: Array<SelectableValue<number>> = _.map([1, 2, 3, 4, 5, 10], (value: number) => ({
   value,
   label: '1/' + value,
 }));
 
 interface State {
   legendFormat: string;
-  formatOption: SelectOptionItem<string>;
+  formatOption: SelectableValue<string>;
   interval: string;
-  intervalFactorOption: SelectOptionItem<number>;
+  intervalFactorOption: SelectableValue<number>;
   instant: boolean;
 }
 
@@ -38,9 +39,11 @@ export class PromQueryEditor extends PureComponent<Props, State> {
 
   constructor(props: Props) {
     super(props);
-    const { query } = props;
+    // Use default query to prevent undefined input values
+    const defaultQuery: Partial<PromQuery> = { expr: '', legendFormat: '', interval: '' };
+    const query = Object.assign({}, defaultQuery, props.query);
     this.query = query;
-    // Query target properties that are fullu controlled inputs
+    // Query target properties that are fully controlled inputs
     this.state = {
       // Fully controlled text inputs
       interval: query.interval,
@@ -54,11 +57,11 @@ export class PromQueryEditor extends PureComponent<Props, State> {
     };
   }
 
-  onFieldChange = (query: PromQuery, override?) => {
+  onFieldChange = (query: PromQuery, override?: any) => {
     this.query.expr = query.expr;
   };
 
-  onFormatChange = (option: SelectOptionItem<string>) => {
+  onFormatChange = (option: SelectableValue<string>) => {
     this.query.format = option.value;
     this.setState({ formatOption: option }, this.onRunQuery);
   };
@@ -75,7 +78,7 @@ export class PromQueryEditor extends PureComponent<Props, State> {
     this.setState({ interval });
   };
 
-  onIntervalFactorChange = (option: SelectOptionItem<number>) => {
+  onIntervalFactorChange = (option: SelectableValue<number>) => {
     this.query.intervalFactor = option.value;
     this.setState({ intervalFactorOption: option }, this.onRunQuery);
   };
@@ -93,7 +96,7 @@ export class PromQueryEditor extends PureComponent<Props, State> {
   };
 
   render() {
-    const { datasource, query, panelData, queryResponse } = this.props;
+    const { datasource, query, data } = this.props;
     const { formatOption, instant, interval, intervalFactorOption, legendFormat } = this.state;
 
     return (
@@ -104,43 +107,46 @@ export class PromQueryEditor extends PureComponent<Props, State> {
           onRunQuery={this.onRunQuery}
           onChange={this.onFieldChange}
           history={[]}
-          panelData={panelData}
-          queryResponse={queryResponse}
-          datasourceStatus={DataSourceStatus.Connected} // TODO: replace with real DataSourceStatus
+          data={data}
         />
 
         <div className="gf-form-inline">
           <div className="gf-form">
-            <FormLabel
+            <InlineFormLabel
               width={7}
               tooltip="Controls the name of the time series, using name or pattern. For example
         {{hostname}} will be replaced with label value for the label hostname."
             >
               Legend
-            </FormLabel>
+            </InlineFormLabel>
             <input
               type="text"
               className="gf-form-input"
               placeholder="legend format"
               value={legendFormat}
               onChange={this.onLegendChange}
+              onBlur={this.onRunQuery}
             />
           </div>
 
           <div className="gf-form">
-            <FormLabel
+            <InlineFormLabel
               width={7}
-              tooltip="Leave blank for auto handling based on time range and panel width.
-            Note that the actual dates used in the query will be adjusted
-        to a multiple of the interval step."
+              tooltip={
+                <>
+                  An additional lower limit for the step parameter of the Prometheus query and for the{' '}
+                  <code>$__interval</code> variable. The limit is absolute and not modified by the "Resolution" setting.
+                </>
+              }
             >
               Min step
-            </FormLabel>
+            </InlineFormLabel>
             <input
               type="text"
               className="gf-form-input width-8"
               placeholder={interval}
               onChange={this.onIntervalChange}
+              onBlur={this.onRunQuery}
               value={interval}
             />
           </div>
@@ -156,17 +162,23 @@ export class PromQueryEditor extends PureComponent<Props, State> {
           </div>
 
           <div className="gf-form">
-            <div className="gf-form-label">Format</div>
-            <Select isSearchable={false} options={FORMAT_OPTIONS} onChange={this.onFormatChange} value={formatOption} />
+            <div className="gf-form-label width-7">Format</div>
+            <Select
+              width={16}
+              isSearchable={false}
+              options={FORMAT_OPTIONS}
+              onChange={this.onFormatChange}
+              value={formatOption}
+            />
             <Switch label="Instant" checked={instant} onChange={this.onInstantChange} />
 
-            <FormLabel width={10} tooltip="Link to Graph in Prometheus">
+            <InlineFormLabel width={10} tooltip="Link to Graph in Prometheus">
               <PromLink
                 datasource={datasource}
                 query={this.query} // Use modified query
-                panelData={panelData}
+                panelData={data}
               />
-            </FormLabel>
+            </InlineFormLabel>
           </div>
         </div>
       </div>

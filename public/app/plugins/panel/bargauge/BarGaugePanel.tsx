@@ -4,42 +4,57 @@ import React, { PureComponent } from 'react';
 // Services & Utils
 import { config } from 'app/core/config';
 
-// Components
-import { BarGauge, VizRepeater, getFieldDisplayValues, FieldDisplay } from '@grafana/ui';
-
-// Types
+import { BarGauge, VizRepeater, VizRepeaterRenderValueProps, DataLinksContextMenu } from '@grafana/ui';
 import { BarGaugeOptions } from './types';
-import { PanelProps } from '@grafana/ui/src/types';
+import {
+  getFieldDisplayValues,
+  FieldDisplay,
+  PanelProps,
+  getDisplayValueAlignmentFactors,
+  DisplayValueAlignmentFactors,
+} from '@grafana/data';
 
 export class BarGaugePanel extends PureComponent<PanelProps<BarGaugeOptions>> {
-  renderValue = (value: FieldDisplay, width: number, height: number): JSX.Element => {
+  renderValue = (valueProps: VizRepeaterRenderValueProps<FieldDisplay, DisplayValueAlignmentFactors>): JSX.Element => {
     const { options } = this.props;
-    const { fieldOptions } = options;
-    const { field, display } = value;
+    const { value, alignmentFactors, orientation, width, height } = valueProps;
+    const { field, display, view, colIndex } = value;
 
     return (
-      <BarGauge
-        value={display}
-        width={width}
-        height={height}
-        orientation={options.orientation}
-        thresholds={fieldOptions.thresholds}
-        theme={config.theme}
-        itemSpacing={this.getItemSpacing()}
-        displayMode={options.displayMode}
-        minValue={field.min}
-        maxValue={field.max}
-      />
+      <DataLinksContextMenu links={value.getLinks}>
+        {({ openMenu, targetClassName }) => {
+          return (
+            <BarGauge
+              value={display}
+              width={width}
+              height={height}
+              orientation={orientation}
+              field={field}
+              display={view?.getFieldDisplayProcessor(colIndex)}
+              theme={config.theme}
+              itemSpacing={this.getItemSpacing()}
+              displayMode={options.displayMode}
+              onClick={openMenu}
+              className={targetClassName}
+              alignmentFactors={alignmentFactors}
+              showUnfilled={options.showUnfilled}
+            />
+          );
+        }}
+      </DataLinksContextMenu>
     );
   };
 
   getValues = (): FieldDisplay[] => {
-    const { data, options, replaceVariables } = this.props;
+    const { data, options, replaceVariables, fieldConfig, timeZone } = this.props;
     return getFieldDisplayValues({
-      ...options,
+      fieldConfig,
+      reduceOptions: options.reduceOptions,
       replaceVariables,
       theme: config.theme,
       data: data.series,
+      autoMinMax: true,
+      timeZone,
     });
   };
 
@@ -57,6 +72,7 @@ export class BarGaugePanel extends PureComponent<PanelProps<BarGaugeOptions>> {
     return (
       <VizRepeater
         source={data}
+        getAlignmentFactors={getDisplayValueAlignmentFactors}
         getValues={this.getValues}
         renderValue={this.renderValue}
         renderCounter={renderCounter}

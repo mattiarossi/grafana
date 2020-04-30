@@ -78,7 +78,7 @@ type ThreemaNotifier struct {
 	log         log.Logger
 }
 
-// NewThreemaNotifier is the constructor for the Threema notifer
+// NewThreemaNotifier is the constructor for the Threema notifier
 func NewThreemaNotifier(model *models.AlertNotification) (alerting.Notifier, error) {
 	if model.Settings == nil {
 		return nil, alerting.ValidationError{Reason: "No Settings Supplied"}
@@ -132,11 +132,11 @@ func (notifier *ThreemaNotifier) Notify(evalContext *alerting.EvalContext) error
 	stateEmoji := ""
 	switch evalContext.Rule.State {
 	case models.AlertStateOK:
-		stateEmoji = "\u2705 " // White Heavy Check Mark
+		stateEmoji = "\u2705 " // Check Mark Button
 	case models.AlertStateNoData:
-		stateEmoji = "\u2753 " // Black Question Mark Ornament
+		stateEmoji = "\u2753\uFE0F " // Question Mark
 	case models.AlertStateAlerting:
-		stateEmoji = "\u26A0 " // Warning sign
+		stateEmoji = "\u26A0\uFE0F " // Warning sign
 	}
 
 	// Build message
@@ -147,7 +147,7 @@ func (notifier *ThreemaNotifier) Notify(evalContext *alerting.EvalContext) error
 	if err == nil {
 		message = message + fmt.Sprintf("*URL:* %s\n", ruleURL)
 	}
-	if evalContext.ImagePublicURL != "" {
+	if notifier.NeedsImage() && evalContext.ImagePublicURL != "" {
 		message = message + fmt.Sprintf("*Image:* %s\n", evalContext.ImagePublicURL)
 	}
 	data.Set("text", message)

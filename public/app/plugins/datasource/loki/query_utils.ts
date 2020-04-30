@@ -1,7 +1,7 @@
 import { LokiExpression } from './types';
+import escapeRegExp from 'lodash/escapeRegExp';
 
 const selectorRegexp = /(?:^|\s){[^{]*}/g;
-const caseInsensitive = '(?i)'; // Golang mode modifier for Loki, doesn't work in JavaScript
 export function parseQuery(input: string): LokiExpression {
   input = input || '';
   const match = input.match(selectorRegexp);
@@ -9,13 +9,11 @@ export function parseQuery(input: string): LokiExpression {
   let regexp = '';
 
   if (match) {
+    // Regexp result is ignored on the server side
     regexp = input.replace(selectorRegexp, '').trim();
     // Keep old-style regexp, otherwise take whole query
     if (regexp && regexp.search(/\|=|\|~|!=|!~/) === -1) {
       query = match[0].trim();
-      if (!regexp.startsWith(caseInsensitive)) {
-        regexp = `${caseInsensitive}${regexp}`;
-      }
     } else {
       regexp = '';
     }
@@ -48,6 +46,7 @@ export function getHighlighterExpressionsFromQuery(input: string): string[] {
       break;
     }
     // Drop terms for negative filters
+    const filterOperator = expression.substr(filterStart, 2);
     const skip = expression.substr(filterStart).search(/!=|!~/) === 0;
     expression = expression.substr(filterStart + 2);
     if (skip) {
@@ -59,12 +58,20 @@ export function getHighlighterExpressionsFromQuery(input: string): string[] {
     if (filterEnd === -1) {
       filterTerm = expression.trim();
     } else {
-      filterTerm = expression.substr(0, filterEnd);
+      filterTerm = expression.substr(0, filterEnd).trim();
       expression = expression.substr(filterEnd);
     }
 
     // Unwrap the filter term by removing quotes
-    results.push(filterTerm.replace(/^\s*"/g, '').replace(/"\s*$/g, ''));
+    const quotedTerm = filterTerm.match(/^"((?:[^\\"]|\\")*)"$/);
+
+    if (quotedTerm) {
+      const unwrappedFilterTerm = quotedTerm[1];
+      const regexOperator = filterOperator === '|~';
+      results.push(regexOperator ? unwrappedFilterTerm : escapeRegExp(unwrappedFilterTerm));
+    } else {
+      return null;
+    }
   }
   return results;
 }

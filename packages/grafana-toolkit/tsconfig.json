@@ -1,18 +1,12 @@
 {
-  "include": ["src/**/*.ts"],
-  "exclude": ["dist", "node_modules"],
   "compilerOptions": {
+    "declarationDir": "dist/src",
     "module": "commonjs",
-    "rootDirs": ["."],
     "outDir": "dist/src",
-    "strict": true,
-    "alwaysStrict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "typeRoots": ["./node_modules/@types"],
-    "skipLibCheck": true, // Temp workaround for Duplicate identifier tsc errors,
-    "removeComments": false,
-    "esModuleInterop": true,
-    "lib": ["es2015", "es2017.string"]
-  }
+    "rootDirs": ["."],
+    "typeRoots": ["node_modules/@types"]
+  },
+  "exclude": ["dist", "node_modules"],
+  "extends": "@grafana/tsconfig",
+  "include": ["src/**/*.ts", "../../public/app/types/jquery/*.ts", "../../public/app/types/sanitize-url.d.ts"]
 }

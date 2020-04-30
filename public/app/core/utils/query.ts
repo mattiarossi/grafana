@@ -1,7 +1,7 @@
 import _ from 'lodash';
-import { DataQuery } from '@grafana/ui/';
+import { DataQuery } from '@grafana/data';
 
-export const getNextRefIdChar = (queries: DataQuery[]): string => {
+export const getNextRefIdChar = (queries: DataQuery[]): string | undefined => {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
   return _.find(letters, refId => {
@@ -10,3 +10,9 @@ export const getNextRefIdChar = (queries: DataQuery[]): string => {
     });
   });
 };
+
+export function addQuery(queries: DataQuery[], query?: Partial<DataQuery>): DataQuery[] {
+  const q = query || {};
+  q.refId = getNextRefIdChar(queries);
+  return [...queries, q as DataQuery];
+}

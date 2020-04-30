@@ -1,13 +1,14 @@
 module github.com/grafana/grafana/scripts/go
 
-go 1.12
+go 1.14
 
 require (
-	github.com/Unknwon/bra v0.0.0-20181014071252-e3d443382332
-	github.com/Unknwon/com v0.0.0-20190321035513-0fed4efef755 // indirect
-	github.com/Unknwon/log v0.0.0-20150304194804-e617c87089d3 // indirect
-	github.com/mgechev/revive v0.0.0-20190505013521-22b849f28677
-	github.com/securego/gosec v0.0.0-20190510081509-ee80733faf72
+	github.com/golangci/golangci-lint v1.24.0
+	github.com/mgechev/revive v0.0.0-20190917153825-40564c5052ae
+	github.com/securego/gosec v0.0.0-20200103095621-79fbf3af8d83
+	github.com/unknwon/bra v0.0.0-20190805204333-bb0929b6cca0
+	github.com/unknwon/com v1.0.1 // indirect
+	github.com/unknwon/log v0.0.0-20150304194804-e617c87089d3 // indirect
 	github.com/urfave/cli v1.20.0 // indirect
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7 // indirect
 )

@@ -3,10 +3,9 @@ import program from 'commander';
 import { execTask } from './utils/execTask';
 import chalk from 'chalk';
 import { startTask } from './tasks/core.start';
-import { buildTask } from './tasks/grafanaui.build';
-import { releaseTask } from './tasks/grafanaui.release';
 import { changelogTask } from './tasks/changelog';
 import { cherryPickTask } from './tasks/cherrypick';
+import { manifestTask } from './tasks/manifest';
 import { precommitTask } from './tasks/precommit';
 import { templateTask } from './tasks/template';
 import { pluginBuildTask } from './tasks/plugin.build';
@@ -15,6 +14,13 @@ import { pluginTestTask } from './tasks/plugin.tests';
 import { searchTestDataSetupTask } from './tasks/searchTestDataSetup';
 import { closeMilestoneTask } from './tasks/closeMilestone';
 import { pluginDevTask } from './tasks/plugin.dev';
+import { githubPublishTask } from './tasks/plugin.utils';
+import { pluginUpdateTask } from './tasks/plugin.update';
+import { ciBuildPluginDocsTask, ciBuildPluginTask, ciPackagePluginTask, ciPluginReportTask } from './tasks/plugin.ci';
+import { buildPackageTask } from './tasks/package.build';
+import { pluginCreateTask } from './tasks/plugin.create';
+import { bundleManagedTask } from './tasks/plugin/bundle.managed';
+import { componentCreateTask } from './tasks/component.create';
 
 export const run = (includeInternalScripts = false) => {
   if (includeInternalScripts) {
@@ -22,34 +28,24 @@ export const run = (includeInternalScripts = false) => {
     program
       .command('core:start')
       .option('-h, --hot', 'Run front-end with HRM enabled')
+      .option('-T, --noTsCheck', 'Run bundler without TS type checking')
       .option('-t, --watchTheme', 'Watch for theme changes and regenerate variables.scss files')
       .description('Starts Grafana front-end in development mode with watch enabled')
       .action(async cmd => {
         await execTask(startTask)({
           watchThemes: cmd.watchTheme,
+          noTsCheck: cmd.noTsCheck,
           hot: cmd.hot,
         });
       });
 
     program
-      .command('gui:build')
-      .description('Builds @grafana/ui package to packages/grafana-ui/dist')
+      .command('package:build')
+      .option('-s, --scope <packages>', 'packages=[data|runtime|ui|toolkit|e2e|e2e-selectors]')
+      .description('Builds @grafana/* package to packages/grafana-*/dist')
       .action(async cmd => {
-        // @ts-ignore
-        await execTask(buildTask)();
-      });
-
-    program
-      .command('gui:release')
-      .description('Prepares @grafana/ui release (and publishes to npm on demand)')
-      .option('-p, --publish', 'Publish @grafana/ui to npm registry')
-      .option('-u, --usePackageJsonVersion', 'Use version specified in package.json')
-      .option('--createVersionCommit', 'Create and push version commit')
-      .action(async cmd => {
-        await execTask(releaseTask)({
-          publishToNpm: !!cmd.publish,
-          usePackageJsonVersion: !!cmd.usePackageJsonVersion,
-          createVersionCommit: !!cmd.createVersionCommit,
+        await execTask(buildPackageTask)({
+          scope: cmd.scope,
         });
       });
 
@@ -65,14 +61,16 @@ export const run = (includeInternalScripts = false) => {
 
         await execTask(changelogTask)({
           milestone: cmd.milestone,
+          silent: true,
         });
       });
 
     program
       .command('cherrypick')
+      .option('-e, --enterprise', 'Run task for grafana-enterprise')
       .description('Helps find commits to cherry pick')
       .action(async cmd => {
-        await execTask(cherryPickTask)({});
+        await execTask(cherryPickTask)({ enterprise: !!cmd.enterprise });
       });
 
     program
@@ -93,8 +91,7 @@ export const run = (includeInternalScripts = false) => {
       .command('toolkit:build')
       .description('Prepares grafana/toolkit dist package')
       .action(async cmd => {
-        // @ts-ignore
-        await execTask(toolkitBuildTask)();
+        await execTask(toolkitBuildTask)({});
       });
 
     program
@@ -119,21 +116,42 @@ export const run = (includeInternalScripts = false) => {
           milestone: cmd.milestone,
         });
       });
+
+    // React generator
+    program
+      .command('component:create')
+      .description(
+        'Scaffold React components. Optionally add test, story and .mdx files. The components are created in the same dir the script is run from.'
+      )
+      .action(async () => {
+        await execTask(componentCreateTask)({});
+      });
   }
+
+  program
+    .command('plugin:create [name]')
+    .description('Creates plugin from template')
+    .action(async cmd => {
+      await execTask(pluginCreateTask)({ name: cmd, silent: true });
+    });
 
   program
     .command('plugin:build')
     .description('Prepares plugin dist package')
     .action(async cmd => {
-      await execTask(pluginBuildTask)({});
+      await execTask(pluginBuildTask)({ coverage: false, silent: true });
     });
 
   program
     .command('plugin:dev')
+    .option('-w, --watch', 'Run plugin development mode with watch enabled')
+    .option('--yarnlink', 'symlink this project to the local grafana/toolkit')
     .description('Starts plugin dev mode')
     .action(async cmd => {
       await execTask(pluginDevTask)({
-        watch: true,
+        watch: !!cmd.watch,
+        yarnlink: !!cmd.yarnlink,
+        silent: true,
       });
     });
 
@@ -141,12 +159,89 @@ export const run = (includeInternalScripts = false) => {
     .command('plugin:test')
     .option('-u, --updateSnapshot', 'Run snapshots update')
     .option('--coverage', 'Run code coverage')
+    .option('--watch', 'Run tests in interactive watch mode')
+    .option('--testPathPattern <regex>', 'Run only tests with a path that matches the regex')
+    .option('--testNamePattern <regex>', 'Run only tests with a name that matches the regex')
     .description('Executes plugin tests')
     .action(async cmd => {
       await execTask(pluginTestTask)({
         updateSnapshot: !!cmd.updateSnapshot,
         coverage: !!cmd.coverage,
+        watch: !!cmd.watch,
+        testPathPattern: cmd.testPathPattern,
+        testNamePattern: cmd.testNamePattern,
+        silent: true,
       });
+    });
+
+  program
+    .command('plugin:ci-build')
+    .option('--finish', 'move all results to the jobs folder', false)
+    .description('Build the plugin, leaving results in /dist and /coverage')
+    .action(async cmd => {
+      await execTask(ciBuildPluginTask)({
+        finish: cmd.finish,
+      });
+    });
+
+  program
+    .command('plugin:ci-docs')
+    .description('Build the HTML docs')
+    .action(async cmd => {
+      await execTask(ciBuildPluginDocsTask)({});
+    });
+
+  program
+    .command('plugin:ci-package')
+    .description('Create a zip packages for the plugin')
+    .action(async cmd => {
+      await execTask(ciPackagePluginTask)({});
+    });
+
+  program
+    .command('plugin:ci-report')
+    .description('Build a report for this whole process')
+    .option('--upload', 'upload packages also')
+    .action(async cmd => {
+      await execTask(ciPluginReportTask)({
+        upload: cmd.upload,
+      });
+    });
+
+  program
+    .command('plugin:bundle-managed')
+    .description('Builds managed plugins')
+    .action(async cmd => {
+      await execTask(bundleManagedTask)({});
+    });
+
+  program
+    .command('plugin:github-publish')
+    .option('--dryrun', 'Do a dry run only', false)
+    .option('--verbose', 'Print verbose', false)
+    .option('--commitHash <hashKey>', 'Specify the commit hash')
+    .description('Publish to github')
+    .action(async cmd => {
+      await execTask(githubPublishTask)({
+        dryrun: cmd.dryrun,
+        verbose: cmd.verbose,
+        commitHash: cmd.commitHash,
+      });
+    });
+
+  program
+    .command('plugin:update-circleci')
+    .description('Update plugin')
+    .action(async cmd => {
+      await execTask(pluginUpdateTask)({});
+    });
+
+  // Test the manifest creation
+  program
+    .command('manifest')
+    .description('create a manifest file in the cwd')
+    .action(async cmd => {
+      await execTask(manifestTask)({ folder: process.cwd() });
     });
 
   program.on('command:*', () => {

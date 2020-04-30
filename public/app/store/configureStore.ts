@@ -1,124 +1,81 @@
-import { createStore, applyMiddleware, compose, combineReducers } from 'redux';
-import thunk from 'redux-thunk';
-import { combineEpics, createEpicMiddleware } from 'redux-observable';
+import { configureStore as reduxConfigureStore, getDefaultMiddleware } from '@reduxjs/toolkit';
 import { createLogger } from 'redux-logger';
-import sharedReducers from 'app/core/reducers';
-import alertingReducers from 'app/features/alerting/state/reducers';
-import teamsReducers from 'app/features/teams/state/reducers';
-import apiKeysReducers from 'app/features/api-keys/state/reducers';
-import foldersReducers from 'app/features/folders/state/reducers';
-import dashboardReducers from 'app/features/dashboard/state/reducers';
-import exploreReducers from 'app/features/explore/state/reducers';
-import pluginReducers from 'app/features/plugins/state/reducers';
-import dataSourcesReducers from 'app/features/datasources/state/reducers';
-import usersReducers from 'app/features/users/state/reducers';
-import userReducers from 'app/features/profile/state/reducers';
-import organizationReducers from 'app/features/org/state/reducers';
+import { ThunkMiddleware } from 'redux-thunk';
 import { setStore } from './store';
-import { limitMessageRateEpic } from 'app/features/explore/state/epics/limitMessageRateEpic';
-import { stateSaveEpic } from 'app/features/explore/state/epics/stateSaveEpic';
-import { processQueryResultsEpic } from 'app/features/explore/state/epics/processQueryResultsEpic';
-import { processQueryErrorsEpic } from 'app/features/explore/state/epics/processQueryErrorsEpic';
-import { runQueriesEpic } from 'app/features/explore/state/epics/runQueriesEpic';
-import { runQueriesBatchEpic } from 'app/features/explore/state/epics/runQueriesBatchEpic';
-import {
-  DataSourceApi,
-  DataQueryResponse,
-  DataQuery,
-  DataSourceJsonData,
-  DataQueryRequest,
-  DataStreamObserver,
-  TimeZone,
-  RawTimeRange,
-  TimeRange,
-  DateTimeInput,
-  FormatInput,
-  DateTime,
-  toUtc,
-  dateTime,
-  AbsoluteTimeRange,
-} from '@grafana/ui';
-import { Observable } from 'rxjs';
-import { getQueryResponse } from 'app/core/utils/explore';
 import { StoreState } from 'app/types/store';
 import { toggleLogActionsMiddleware } from 'app/core/middlewares/application';
-import { timeEpic } from 'app/features/explore/state/epics/timeEpic';
-import { TimeSrv, getTimeSrv } from 'app/features/dashboard/services/TimeSrv';
-import { UserState } from 'app/types/user';
-import { getTimeRange } from 'app/core/utils/explore';
-import { getTimeZone } from 'app/features/profile/state/selectors';
-import { getShiftedTimeRange } from 'app/core/utils/timePicker';
-
-const rootReducers = {
-  ...sharedReducers,
-  ...alertingReducers,
-  ...teamsReducers,
-  ...apiKeysReducers,
-  ...foldersReducers,
-  ...dashboardReducers,
-  ...exploreReducers,
-  ...pluginReducers,
-  ...dataSourcesReducers,
-  ...usersReducers,
-  ...userReducers,
-  ...organizationReducers,
-};
+import { addReducer, createRootReducer } from '../core/reducers/root';
+import { buildInitialState } from '../core/reducers/navModel';
 
 export function addRootReducer(reducers: any) {
-  Object.assign(rootReducers, ...reducers);
+  // this is ok now because we add reducers before configureStore is called
+  // in the future if we want to add reducers during runtime
+  // we'll have to solve this in a more dynamic way
+  addReducer(reducers);
 }
-
-export const rootEpic: any = combineEpics(
-  limitMessageRateEpic,
-  stateSaveEpic,
-  runQueriesEpic,
-  runQueriesBatchEpic,
-  processQueryResultsEpic,
-  processQueryErrorsEpic,
-  timeEpic
-);
-
-export interface EpicDependencies {
-  getQueryResponse: (
-    datasourceInstance: DataSourceApi<DataQuery, DataSourceJsonData>,
-    options: DataQueryRequest<DataQuery>,
-    observer?: DataStreamObserver
-  ) => Observable<DataQueryResponse>;
-  getTimeSrv: () => TimeSrv;
-  getTimeRange: (timeZone: TimeZone, rawRange: RawTimeRange) => TimeRange;
-  getTimeZone: (state: UserState) => TimeZone;
-  toUtc: (input?: DateTimeInput, formatInput?: FormatInput) => DateTime;
-  dateTime: (input?: DateTimeInput, formatInput?: FormatInput) => DateTime;
-  getShiftedTimeRange: (direction: number, origRange: TimeRange, timeZone: TimeZone) => AbsoluteTimeRange;
-}
-
-const dependencies: EpicDependencies = {
-  getQueryResponse,
-  getTimeSrv,
-  getTimeRange,
-  getTimeZone,
-  toUtc,
-  dateTime,
-  getShiftedTimeRange,
-};
-
-const epicMiddleware = createEpicMiddleware({ dependencies });
 
 export function configureStore() {
-  const composeEnhancers = (window as any).__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ || compose;
-  const rootReducer = combineReducers(rootReducers);
   const logger = createLogger({
-    predicate: (getState: () => StoreState) => {
+    predicate: getState => {
       return getState().application.logActions;
     },
   });
-  const storeEnhancers =
-    process.env.NODE_ENV !== 'production'
-      ? applyMiddleware(toggleLogActionsMiddleware, thunk, epicMiddleware, logger)
-      : applyMiddleware(thunk, epicMiddleware);
 
-  const store = createStore(rootReducer, {}, composeEnhancers(storeEnhancers));
+  const middleware = process.env.NODE_ENV !== 'production' ? [toggleLogActionsMiddleware, logger] : [];
+
+  const reduxDefaultMiddleware = getDefaultMiddleware<StoreState>({
+    thunk: true,
+    serializableCheck: false,
+    immutableCheck: false,
+  } as any);
+
+  const store = reduxConfigureStore<StoreState>({
+    reducer: createRootReducer(),
+    middleware: [...reduxDefaultMiddleware, ...middleware] as [ThunkMiddleware<StoreState>],
+    devTools: process.env.NODE_ENV !== 'production',
+    preloadedState: {
+      navIndex: buildInitialState(),
+    },
+  });
+
   setStore(store);
-  epicMiddleware.run(rootEpic);
   return store;
 }
+
+/* 
+function getActionsToIgnoreSerializableCheckOn() {
+  return [
+    'dashboard/setPanelAngularComponent',
+    'dashboard/panelModelAndPluginReady',
+    'dashboard/dashboardInitCompleted',
+    'plugins/panelPluginLoaded',
+    'explore/initializeExplore',
+    'explore/changeRange',
+    'explore/updateDatasourceInstance',
+    'explore/queryStoreSubscription',
+    'explore/queryStreamUpdated',
+  ];
+}
+
+function getPathsToIgnoreMutationAndSerializableCheckOn() {
+  return [    
+    'plugins.panels',
+    'dashboard.panels',
+    'dashboard.getModel',
+    'payload.plugin',
+    'panelEditorNew.getPanel',
+    'panelEditorNew.getSourcePanel',
+    'panelEditorNew.getData',
+    'explore.left.queryResponse',
+    'explore.right.queryResponse',
+    'explore.left.datasourceInstance',
+    'explore.right.datasourceInstance',
+    'explore.left.range',
+    'explore.left.eventBridge',
+    'explore.right.eventBridge',
+    'explore.right.range',
+    'explore.left.querySubscription',
+    'explore.right.querySubscription',    
+  ];
+}
+*/

@@ -3,7 +3,7 @@ title = "Using Azure Monitor in Grafana"
 description = "Guide for using Azure Monitor in Grafana"
 keywords = ["grafana", "microsoft", "azure", "monitor", "application", "insights", "log", "analytics", "guide"]
 type = "docs"
-aliases = ["/datasources/azuremonitor"]
+aliases = ["/docs/grafana/latest/datasources/azuremonitor"]
 [menu.docs]
 name = "Azure Monitor"
 parent = "datasources"
@@ -16,16 +16,16 @@ weight = 5
 
 As of Grafana 6.0, the Azure Monitor plugin has been moved into Grafana so it now ships with built-in support for Azure Monitor.
 
-The Azure Monitor Datasource supports multiple services in the Azure cloud:
+The Azure Monitor data source supports multiple services in the Azure cloud:
 
 - **[Azure Monitor]({{< relref "#querying-the-azure-monitor-service" >}})** is the platform service that provides a single source for monitoring Azure resources.
 - **[Application Insights]({{< relref "#querying-the-application-insights-service" >}})** is an extensible Application Performance Management (APM) service for web developers on multiple platforms and can be used to monitor your live web application - it will automatically detect performance anomalies.
 - **[Azure Log Analytics]({{< relref "#querying-the-azure-log-analytics-service" >}})** (or Azure Logs) gives you access to log data collected by Azure Monitor.
 - **[Application Insights Analytics]({{< relref "#writing-analytics-queries-for-the-application-insights-service" >}})** allows you to query [Application Insights data](https://docs.microsoft.com/en-us/azure/azure-monitor/app/analytics) using the same query language used for Azure Log Analytics.
 
-## Adding the data source to Grafana
+## Adding the data source
 
-The datasource can access metrics from four different services. You can configure access to the services that you use. It is also possible to use the same credentials for multiple services if that is how you have set it up in Azure AD.
+The data source can access metrics from four different services. You can configure access to the services that you use. It is also possible to use the same credentials for multiple services if that is how you have set it up in Azure AD.
 
 - [Guide to setting up an Azure Active Directory Application for Azure Monitor.](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal)
 - [Guide to setting up an Azure Active Directory Application for Azure Log Analytics.](https://dev.loganalytics.io/documentation/Authorization/AAD-Setup)
@@ -45,7 +45,7 @@ The datasource can access metrics from four different services. You can configur
 4. Paste these four items into the fields in the Azure Monitor API Details section:
    {{< docs-imagebox img="/img/docs/v62/config_1_azure_monitor_details.png" class="docs-image--no-shadow" caption="Azure Monitor Configuration Details" >}}
 
-   - The Subscription Id can be changed per query. Save the datasource and refresh the page to see the list of subscriptions available for the specified Client Id.
+   - The Subscription Id can be changed per query. Save the data source and refresh the page to see the list of subscriptions available for the specified Client Id.
 
 5. If you are also using the Azure Log Analytics service, then you need to specify these two config values (or you can reuse the Client Id and Secret from the previous step).
 
@@ -71,7 +71,7 @@ az ad sp create-for-rbac -n "http://localhost:3000"
 
 ## Choose a Service
 
-In the query editor for a panel, after choosing your Azure Monitor datasource, the first option is to choose a service. There are three options here:
+In the query editor for a panel, after choosing your Azure Monitor data source, the first option is to choose a service. There are three options here:
 
 - `Azure Monitor`
 - `Application Insights`
@@ -117,23 +117,25 @@ Azure Monitor Examples:
 
 ### Templating with Variables for the Azure Monitor Service
 
-Instead of hard-coding things like server, application and sensor name in you metric queries you can use variables in their place. Variables are shown as dropdown select boxes at the top of the dashboard. These dropdowns makes it easy to change the data being displayed in your dashboard.
+Instead of hard-coding things like server, application and sensor name in your metric queries you can use variables in their place. Variables are shown as dropdown select boxes at the top of the dashboard. These dropdowns make it easy to change the data being displayed in your dashboard.
 
 Note that the Azure Monitor service does not support multiple values yet. If you want to visualize multiple time series (for example, metrics for server1 and server2) then you have to add multiple queries to able to view them on the same graph or in the same table.
 
-The Azure Monitor Datasource Plugin provides the following queries you can specify in the `Query` field in the Variable edit view. They allow you to fill a variable's options list.
+The Azure Monitor data source Plugin provides the following queries you can specify in the `Query` field in the Variable edit view. They allow you to fill a variable's options list.
 
-| Name                                                                                         | Description                                                                     |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| _Subscriptions()_                                                                            | Returns a list of subscriptions.                                                |
-| _ResourceGroups()_                                                                           | Returns a list of resource groups.                                              |
-| _ResourceGroups(12345678-aaaa-bbbb-cccc-123456789aaa)_                                       | Returns a list of resource groups for a specified subscription.                 |
-| _Namespaces(aResourceGroup)_                                                                 | Returns a list of namespaces for the specified resource group.                  |
-| _Namespaces(12345678-aaaa-bbbb-cccc-123456789aaa, aResourceGroup)_                           | Returns a list of namespaces for the specified resource group and subscription. |
-| _ResourceNames(aResourceGroup, aNamespace)_                                                  | Returns a list of resource names.                                               |
-| _ResourceNames(12345678-aaaa-bbbb-cccc-123456789aaaaResourceGroup, aNamespace)_              | Returns a list of resource names for a specified subscription.                  |
-| _MetricNames(aResourceGroup, aNamespace, aResourceName)_                                     | Returns a list of metric names.                                                 |
-| _MetricNames(12345678-aaaa-bbbb-cccc-123456789aaaaResourceGroup, aNamespace, aResourceName)_ | Returns a list of metric names for a specified subscription.                    |
+| Name                                                                                               | Description                                                                     |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| _Subscriptions()_                                                                                  | Returns a list of subscriptions.                                                |
+| _ResourceGroups()_                                                                                 | Returns a list of resource groups.                                              |
+| _ResourceGroups(12345678-aaaa-bbbb-cccc-123456789aaa)_                                             | Returns a list of resource groups for a specified subscription.                 |
+| _Namespaces(aResourceGroup)_                                                                       | Returns a list of namespaces for the specified resource group.                  |
+| _Namespaces(12345678-aaaa-bbbb-cccc-123456789aaa, aResourceGroup)_                                 | Returns a list of namespaces for the specified resource group and subscription. |
+| _ResourceNames(aResourceGroup, aNamespace)_                                                        | Returns a list of resource names.                                               |
+| _ResourceNames(12345678-aaaa-bbbb-cccc-123456789aaa, aResourceGroup, aNamespace)_                  | Returns a list of resource names for a specified subscription.                  |
+| _MetricNamespace(aResourceGroup, aNamespace, aResourceName)_                                       | Returns a list of metric namespaces.                                            |
+| _MetricNamespace(12345678-aaaa-bbbb-cccc-123456789aaa, aResourceGroup, aNamespace, aResourceName)_ | Returns a list of metric namespaces for a specified subscription.               |
+| _MetricNames(aResourceGroup, aNamespace, aResourceName)_                                           | Returns a list of metric names.                                                 |
+| _MetricNames(12345678-aaaa-bbbb-cccc-123456789aaa, aResourceGroup, aNamespace, aResourceName)_     | Returns a list of metric names for a specified subscription.                    |
 
 Examples:
 
@@ -144,16 +146,16 @@ Examples:
 
 {{< docs-imagebox img="/img/docs/v60/azuremonitor-service-variables.png" class="docs-image--no-shadow" caption="Nested Azure Monitor Template Variables" >}}
 
-Checkout the [Templating]({{< relref "../../reference/templating.md" >}}) documentation for an introduction to the templating feature and the different
+Check out the [Templating]({{< relref "../../reference/templating.md" >}}) documentation for an introduction to the templating feature and the different
 types of template variables.
 
 ### Azure Monitor Metrics Whitelist
 
-Not all metrics returned by the Azure Monitor API have values. The Grafana datasource has a whitelist to only return metric names if it is possible they might have values. This whitelist is updated regularly as new services and metrics are added to the Azure cloud. You can find the current whitelist [here](https://github.com/grafana/grafana/blob/master/public/app/plugins/datasource/grafana-azure-monitor-datasource/azure_monitor/supported_namespaces.ts).
+Not all metrics returned by the Azure Monitor API have values. The Grafana data source has a whitelist to only return metric names if it is possible they might have values. This whitelist is updated regularly as new services and metrics are added to the Azure cloud. You can find the current whitelist [here](https://github.com/grafana/grafana/blob/master/public/app/plugins/datasource/grafana-azure-monitor-datasource/azure_monitor/supported_namespaces.ts).
 
 ### Azure Monitor Alerting
 
-Grafana alerting is supported for the Azure Monitor service. This is not Azure Alerts support. Read more about how alerting in Grafana works [here]({{< relref "alerting/rules.md" >}}).
+Grafana alerting is supported for the Azure Monitor service. This is not Azure Alerts support. Read more about how alerting in Grafana works [here]({{< relref "../../alerting/rules.md" >}}).
 
 {{< docs-imagebox img="/img/docs/v60/azuremonitor-alerting.png" class="docs-image--no-shadow" caption="Azure Monitor Alerting" >}}
 
@@ -196,7 +198,7 @@ Examples:
 
 Use the one of the following queries in the `Query` field in the Variable edit view.
 
-Checkout the [Templating]({{< relref "../../reference/templating.md" >}}) documentation for an introduction to the templating feature and the different
+Check out the [Templating]({{< relref "../../reference/templating.md" >}}) documentation for an introduction to the templating feature and the different
 types of template variables.
 
 | Name                               | Description                                                |
@@ -214,7 +216,9 @@ Examples:
 
 ### Application Insights Alerting
 
-Not implemented yet.
+Grafana alerting is supported for Application Insights. This is not Azure Alerts support. Read more about how alerting in Grafana works [here]({{< relref "../../alerting/rules.md" >}}).
+
+{{< docs-imagebox img="/img/docs/v60/azuremonitor-alerting.png" class="docs-image--no-shadow" caption="Azure Monitor Alerting" >}}
 
 ## Querying the Azure Log Analytics Service
 
@@ -270,13 +274,52 @@ There are also some Grafana variables that can be used in Azure Log Analytics qu
 
 - `$__interval` - Grafana calculates the minimum time grain that can be used to group by time in queries. More details on how it works [here]({{< relref "../../reference/templating.md#interval-variables" >}}). It returns a time grain like `5m` or `1h` that can be used in the bin function. E.g. `summarize count() by bin(TimeGenerated, $__interval)`
 
+### Templating with Variables for Azure Log Analytics
+
+Any Log Analytics query that returns a list of values can be used in the `Query` field in the Variable edit view. There is also one Grafana function for Log Analytics that returns a list of workspaces.
+
+Refer to the [Variables]({{< relref "../../reference/templating.md" >}}) documentation for an introduction to the templating feature and the different
+types of template variables.
+
+| Name                                               | Description                                                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| _workspaces()_                                     | Returns a list of workspaces for the default subscription.                                             |
+| _workspaces(12345678-aaaa-bbbb-cccc-123456789aaa)_ | Returns a list of workspaces for the specified subscription (the parameter can be quoted or unquoted). |
+
+Example variable queries:
+
+<!-- prettier-ignore-start -->
+| Query                                                                                   | Description                                               |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| _subscriptions()_                                                                       | Returns a list of Azure subscriptions                     |
+| _workspaces()_                                                                          | Returns a list of workspaces for default subscription     |
+| _workspaces("12345678-aaaa-bbbb-cccc-123456789aaa")_                                    | Returns a list of workspaces for a specified subscription |
+| _workspaces("$subscription")_                                                           | With template variable for the subscription parameter     |
+| _workspace("myWorkspace").Heartbeat \| distinct Computer_                               | Returns a list of Virtual Machines                        |
+| _workspace("$workspace").Heartbeat \| distinct Computer_                                | Returns a list of Virtual Machines with template variable |
+| _workspace("$workspace").Perf \| distinct ObjectName_                                   | Returns a list of objects from the Perf table             |
+| _workspace("$workspace").Perf \| where ObjectName == "$object" \| distinct CounterName_ | Returns a list of metric names from the Perf table        |
+
+<!-- prettier-ignore-end -->
+
+Example of a time series query using variables:
+
+```
+Perf
+| where ObjectName == "$object" and CounterName == "$metric"
+| where TimeGenerated >= $__timeFrom() and TimeGenerated <= $__timeTo()
+| where  $__contains(Computer, $computer)
+| summarize avg(CounterValue) by bin(TimeGenerated, $__interval), Computer
+| order by TimeGenerated asc
+```
+
 ### Azure Log Analytics Alerting
 
 Not implemented yet.
 
 ### Writing Analytics Queries For the Application Insights Service
 
-If you change the service type to "Application Insights", the menu icon to the right adds another option, "Toggle Edit Mode". Once clicked, the query edit mode changes to give you a full text area in which to write log analytics queries. (This is identical to how the InfluxDB datasource lets you write raw queries.)
+If you change the service type to "Application Insights", the menu icon to the right adds another option, "Toggle Edit Mode". Once clicked, the query edit mode changes to give you a full text area in which to write log analytics queries. (This is identical to how the InfluxDB data source lets you write raw queries.)
 
 Once a query is written, the column names are automatically parsed out of the response data. You can then select them in the "X-axis", "Y-axis", and "Split On" dropdown menus, or just type them out.
 
@@ -289,3 +332,34 @@ There are some important caveats to remember:
 - Currently, four default dashboard variables are supported: `$__timeFilter()`, `$__from`, `$__to`, and `$__interval`. If you're searching in timestamped data, replace the beginning of your where clause to `where $__timeFilter()`. Dashboard changes by time region are handled as you'd expect, as long as you leave the name of the `timestamp` column alone. Likewise, `$__interval` will automatically change based on the dashboard's time region _and_ the width of the chart being displayed. Use it in bins, so `bin(timestamp,$__interval)` changes into something like `bin(timestamp,1s)`. Use `$__from` and `$__to` if you just want the formatted dates to be inserted.
 
 - Templated dashboard variables are not yet supported! They will come in a future version.
+
+## Configure the data source with provisioning
+
+It's now possible to configure data sources using config files with Grafana's provisioning system. You can read more about how it works and all the settings you can set for data sources on the [provisioning docs page]({{< relref "../../administration/provisioning/#datasources" >}})
+
+Here are some provisioning examples for this data source.
+
+```yaml
+# config file version
+apiVersion: 1
+
+datasources:
+  - name: Azure Monitor
+    type: grafana-azure-monitor-datasource
+    access: proxy
+    jsonData:
+      appInsightsAppId: <app-insights-app-id>
+      clientId: <client-id>
+      cloudName: azuremonitor
+      subscriptionId: <subscription-id>
+      tenantId: <tenant-id>
+      logAnalyticsClientId: <log-analytics-client-id>
+      logAnalyticsDefaultWorkspace: <log-analytics-default-workspace>
+      logAnalyticsSubscriptionId: <log-analytics-subscription-id>
+      logAnalyticsTenantId: <log-analytics-tenant-id>
+    secureJsonData:
+      clientSecret: <client-secret>
+      appInsightsApiKey: <app-insights-api-key>
+      logAnalyticsClientSecret: <log-analytics-client-secret>
+    version: 1
+```

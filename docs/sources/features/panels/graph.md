@@ -2,11 +2,11 @@
 title = "Graph Panel"
 keywords = ["grafana", "graph panel", "documentation", "guide", "graph"]
 type = "docs"
-aliases = ["/reference/graph/"]
+aliases = ["/docs/grafana/latest/reference/graph/"]
 [menu.docs]
 name = "Graph"
 parent = "panels"
-weight = 1
+weight = 4
 +++
 
 # Graph Panel
@@ -17,8 +17,8 @@ The main panel in Grafana is simply named Graph. It provides a very rich set of 
 
 1. Clicking the title for a panel exposes a menu.  The `edit` option opens additional configuration
 options for the panel.
-2. Click to open color & axis selection.
-3. Click to only show this series. Shift/Ctrl + click to hide series.
+2. Click to open color and axis selection.
+3. Click to only show this series. Shift/Ctrl+Click to hide series.
 
 ## General
 
@@ -35,41 +35,10 @@ The general tab allows customization of a panel's appearance and menu options.
 ### Repeat
 Repeat a panel for each value of a variable.  Repeating panels are described in more detail [here]({{< relref "../../reference/templating.md#repeating-panels" >}}).
 
-### Data link
-
-> Only available in Grafana v6.3+.
-
-Data link in graph settings allows adding dynamic links to the visualization. Those links can link to either other dashboard or to an external URL.
-
-{{< docs-imagebox img="/img/docs/data_link.png"  max-width= "800px" >}}
-
-Data link is defined by title, url and a setting whether or not it should be opened in a new window.
-
-**Title** is a human readable label for the link that will be displayed in the UI. The link itself is accessible in the graph's context menu when user **clicks on a single data point**:
-
-{{< docs-imagebox img="/img/docs/data_link_tooltip.png"  max-width= "800px" >}}
-
-**URL** field allows the URL configuration for a given link. Apart from regular query params it also supports built-in variables and dashboard variables that you can choose from
-available suggestions:
-
-{{< docs-imagebox img="/img/docs/data_link_typeahead.png"  max-width= "800px" >}}
-
-
-Available built-in variables are:
-
-1. ``__all_variables`` - will add all current dashboard's variables to the URL
-2. ``__url_time_range`` - will add current dashboard's time range to the URL (i.e. ``?from=now-6h&to=now``)
-3. ``__series_name`` - will add series name as a query param in the URL (i.e. ``?series=B-series``)
-4. ``__value_time`` - will add datapoint's timestamp (Unix ms epoch) to the URL (i.e. ``?time=1560268814105``)
-
-
-#### Template variables in data links
-When linking to another dashboard that uses template variables, you can use ``var-myvar=${myvar}`` syntax (where ``myvar`` is a name of template variable)
-to use current dashboard's variable value.
 
 ## Metrics
 
-The metrics tab defines what series data and sources to render.  Each datasource provides different
+The metrics tab defines what series data and sources to render.  Each data source provides different
 options.
 
 ## Axes
@@ -128,11 +97,11 @@ For **Mode** there are three options:
 
 Additional values can be shown along-side the legend names:
 
-- **Min** - Minimum of all values returned from metric query
+- **Min** - Minimum of all values returned from the metric query
 - **Max** - Maximum of all values returned from the metric query
-- **Avg** - Average of all values returned from metric query
+- **Avg** - Average of all values returned from the metric query
 - **Current** - Last value returned from the metric query
-- **Total** - Sum of all values returned from metric query
+- **Total** - Sum of all values returned from the metric query
 - **Decimals** - Controls how many decimals are displayed for legend values (and graph hover tooltips)
 
 The legend values are calculated client side by Grafana and depend on what type of
@@ -168,6 +137,7 @@ Display styles control visual properties of the graph.
 - **Line Width** - The width of the line for a series (default 1).
 - **Staircase** - Draws adjacent points as staircase
 - **Points Radius** - Adjust the size of points when *Points* are selected as *Draw Mode*.
+- **Hidden Series** - Hide series by default in graph.
 
 #### Hover tooltip
 
@@ -177,7 +147,7 @@ Display styles control visual properties of the graph.
    - Individual: the value for the series you hover over
    - Cumulative - sum of series below plus the series you hover over
 
-#### Stacking & Null value
+#### Stacking and Null value
 
 If there are multiple series, they can be displayed as a group.
 
@@ -217,4 +187,11 @@ Time regions allow you to highlight certain time regions of the graph to make it
 
 The time range tab allows you to override the dashboard time range and specify a panel specific time.
 Either through a relative from now time option or through a timeshift.
-Panel time overrides & timeshift are described in more detail [here]({{< relref "reference/timerange.md#panel-time-overrides-timeshift" >}}).
+Panel time overrides and timeshift are described in more detail [here]({{< relref "../../reference/timerange.md#panel-time-overrides-timeshift" >}}).
+
+### Data links
+
+{{< docs-imagebox img="/img/docs/v66/datalinks_graph.png" max-width="1025px" caption="Data links" >}}
+
+Data links allow you add dynamic URL links to your visualizations, [read more on data links]({{< relref "../../reference/datalinks.md" >}}).
+

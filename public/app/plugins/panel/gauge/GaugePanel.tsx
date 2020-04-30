@@ -5,40 +5,49 @@ import React, { PureComponent } from 'react';
 import { config } from 'app/core/config';
 
 // Components
-import { Gauge, FieldDisplay, getFieldDisplayValues, VizOrientation } from '@grafana/ui';
+import { Gauge, DataLinksContextMenu, VizRepeater, VizRepeaterRenderValueProps } from '@grafana/ui';
 
 // Types
 import { GaugeOptions } from './types';
-import { PanelProps, VizRepeater } from '@grafana/ui';
+import { FieldDisplay, getFieldDisplayValues, VizOrientation, PanelProps } from '@grafana/data';
 
 export class GaugePanel extends PureComponent<PanelProps<GaugeOptions>> {
-  renderValue = (value: FieldDisplay, width: number, height: number): JSX.Element => {
+  renderValue = (valueProps: VizRepeaterRenderValueProps<FieldDisplay>): JSX.Element => {
     const { options } = this.props;
-    const { fieldOptions } = options;
+    const { value, width, height } = valueProps;
     const { field, display } = value;
 
     return (
-      <Gauge
-        value={display}
-        width={width}
-        height={height}
-        thresholds={fieldOptions.thresholds}
-        showThresholdLabels={options.showThresholdLabels}
-        showThresholdMarkers={options.showThresholdMarkers}
-        minValue={field.min}
-        maxValue={field.max}
-        theme={config.theme}
-      />
+      <DataLinksContextMenu links={value.getLinks}>
+        {({ openMenu, targetClassName }) => {
+          return (
+            <Gauge
+              value={display}
+              width={width}
+              height={height}
+              field={field}
+              showThresholdLabels={options.showThresholdLabels}
+              showThresholdMarkers={options.showThresholdMarkers}
+              theme={config.theme}
+              onClick={openMenu}
+              className={targetClassName}
+            />
+          );
+        }}
+      </DataLinksContextMenu>
     );
   };
 
   getValues = (): FieldDisplay[] => {
-    const { data, options, replaceVariables } = this.props;
+    const { data, options, replaceVariables, fieldConfig, timeZone } = this.props;
     return getFieldDisplayValues({
-      fieldOptions: options.fieldOptions,
+      fieldConfig,
+      reduceOptions: options.reduceOptions,
       replaceVariables,
       theme: config.theme,
       data: data.series,
+      autoMinMax: true,
+      timeZone,
     });
   };
 
@@ -51,6 +60,7 @@ export class GaugePanel extends PureComponent<PanelProps<GaugeOptions>> {
         width={width}
         height={height}
         source={data}
+        autoGrid={true}
         renderCounter={renderCounter}
         orientation={VizOrientation.Auto}
       />

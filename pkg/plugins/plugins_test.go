@@ -15,7 +15,11 @@ func TestPluginScans(t *testing.T) {
 		setting.StaticRootPath, _ = filepath.Abs("../../public/")
 		setting.Raw = ini.Empty()
 
-		pm := &PluginManager{}
+		pm := &PluginManager{
+			Cfg: &setting.Cfg{
+				FeatureToggles: map[string]bool{},
+			},
+		}
 		err := pm.Init()
 
 		So(err, ShouldBeNil)
@@ -28,18 +32,36 @@ func TestPluginScans(t *testing.T) {
 	})
 
 	Convey("When reading app plugin definition", t, func() {
-		setting.Raw = ini.Empty()
-		sec, _ := setting.Raw.NewSection("plugin.nginx-app")
-		sec.NewKey("path", "testdata/test-app")
-
-		pm := &PluginManager{}
+		pm := &PluginManager{
+			Cfg: &setting.Cfg{
+				FeatureToggles: map[string]bool{},
+				PluginSettings: setting.PluginSettings{
+					"nginx-app": map[string]string{
+						"path": "testdata/test-app",
+					},
+				},
+			},
+		}
 		err := pm.Init()
-
 		So(err, ShouldBeNil)
-		So(len(Apps), ShouldBeGreaterThan, 0)
 
+		So(len(Apps), ShouldBeGreaterThan, 0)
 		So(Apps["test-app"].Info.Logos.Large, ShouldEqual, "public/plugins/test-app/img/logo_large.png")
 		So(Apps["test-app"].Info.Screenshots[1].Path, ShouldEqual, "public/plugins/test-app/img/screenshot2.png")
+	})
+
+	Convey("When checking if renderer is backend only plugin", t, func() {
+		pluginScanner := &PluginScanner{}
+		result := pluginScanner.IsBackendOnlyPlugin("renderer")
+
+		So(result, ShouldEqual, true)
+	})
+
+	Convey("When checking if app is backend only plugin", t, func() {
+		pluginScanner := &PluginScanner{}
+		result := pluginScanner.IsBackendOnlyPlugin("app")
+
+		So(result, ShouldEqual, false)
 	})
 
 }

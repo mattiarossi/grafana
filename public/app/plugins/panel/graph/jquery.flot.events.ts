@@ -3,7 +3,7 @@ import $ from 'jquery';
 import _ from 'lodash';
 //@ts-ignore
 import Drop from 'tether-drop';
-import { CreatePlotOverlay } from '@grafana/ui';
+import { CreatePlotOverlay } from '@grafana/data';
 
 /** @ngInject */
 const createAnnotationToolip: CreatePlotOverlay = (element, event, plot) => {
@@ -616,7 +616,6 @@ export class EventMarkers {
 
 /** @ngInject */
 export function init(this: any, plot: any) {
-  /*jshint validthis:true */
   const that = this;
   const eventMarkers = new EventMarkers(plot);
 

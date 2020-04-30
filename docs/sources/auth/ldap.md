@@ -3,7 +3,7 @@ title = "LDAP Authentication"
 description = "Grafana LDAP Authentication Guide "
 keywords = ["grafana", "configuration", "documentation", "ldap", "active directory"]
 type = "docs"
-aliases = ["/installation/ldap/"]
+aliases = ["/docs/grafana/latest/installation/ldap/"]
 [menu.docs]
 name = "LDAP"
 identifier = "ldap"
@@ -16,6 +16,8 @@ weight = 2
 The LDAP integration in Grafana allows your Grafana users to login with their LDAP credentials. You can also specify mappings between LDAP
 group memberships and Grafana Organization user roles.
 
+> [Enhanced LDAP authentication]({{< relref "../enterprise/enhanced_ldap.md" >}}) is available in [Grafana Enterprise]({{< relref "../enterprise" >}}).
+
 ## Supported LDAP Servers
 
 Grafana uses a [third-party LDAP library](https://github.com/go-ldap/ldap) under the hood that supports basic LDAP v3 functionality.
@@ -24,7 +26,7 @@ This means that you should be able to configure LDAP integration using any compl
 
 ## Enable LDAP
 
-In order to use LDAP integration you'll first need to enable LDAP in the [main config file]({{< relref "installation/configuration.md" >}}) as well as specify the path to the LDAP
+In order to use LDAP integration you'll first need to enable LDAP in the [main config file]({{< relref "../installation/configuration.md" >}}) as well as specify the path to the LDAP
 specific configuration file (default: `/etc/grafana/ldap.toml`).
 
 ```bash
@@ -90,12 +92,39 @@ member_of = "memberOf"
 email =  "email"
 ```
 
+### Using environment variables
+
+You can interpolate variables in the TOML config from environment variables. For instance, you could externalize your `bind_password` that way:
+
+```bash
+bind_password = "${LDAP_ADMIN_PASSWORD}"
+```
+
+## LDAP Debug View
+
+> Only available in Grafana v6.4+
+
+Grafana has an LDAP debug view built-in which allows you to test your LDAP configuration directly within Grafana. At the moment of writing, only Grafana admins can use the LDAP debug view.
+ 
+Within this view, you'll be able to see which LDAP servers are currently reachable and test your current configuration.
+
+{{< docs-imagebox img="/img/docs/ldap_debug.png" class="docs-image--no-shadow" max-width="600px" >}}
+
+
+To use the debug view:
+
+ 1. Type the username of a user that exists within any of your LDAP server(s)
+ 2. Then, press "Run"
+ 3. If the user is found within any of your LDAP instances, the mapping information is displayed
+
+{{< docs-imagebox img="/img/docs/ldap_debug_mapping_testing.png" class="docs-image--no-shadow" max-width="600px" >}}
+
 ### Bind
 
-#### Bind & Bind Password
+#### Bind and Bind Password
 
 By default the configuration expects you to specify a bind DN and bind password. This should be a read only user that can perform LDAP searches.
-When the user DN is found a second bind is performed with the user provided username & password (in the normal Grafana login form).
+When the user DN is found a second bind is performed with the user provided username and password (in the normal Grafana login form).
 
 ```bash
 bind_dn = "cn=admin,dc=grafana,dc=org"
@@ -125,8 +154,6 @@ group_search_base_dns = ["ou=groups,dc=grafana,dc=org"]
 ## the %s in the search filter will be replaced with the attribute defined below
 group_search_filter_user_attribute = "uid"
 ```
-
-Also set `member_of = "dn"` in the `[servers.attributes]` section.
 
 ### Group Mappings
 
@@ -172,16 +199,27 @@ Setting | Required | Description | Default
 Users with nested/recursive group membership must have an LDAP server that supports `LDAP_MATCHING_RULE_IN_CHAIN`
 and configure `group_search_filter` in a way that it returns the groups the submitted username is a member of.
 
+To configure `group_search_filter`:
+* You can set `group_search_base_dns` to specify where the matching groups are defined.
+* If you do not use `group_search_base_dns`, then the previously defined `search_base_dns` is used.
+
 **Active Directory example:**
 
 Active Directory groups store the Distinguished Names (DNs) of members, so your filter will need to know the DN for the user based only on the submitted username.
-Multiple DN templates can be searched by combining filters with the LDAP OR-operator. Examples:
+Multiple DN templates can be searched by combining filters with the LDAP OR-operator. Two examples:
+
+```bash
+group_search_filter = "(member:1.2.840.113556.1.4.1941:=%s)"
+group_search_base_dns = ["DC=mycorp,DC=mytld"]
+group_search_filter_user_attribute = "dn"
+```
 
 ```bash
 group_search_filter = "(member:1.2.840.113556.1.4.1941:=CN=%s,[user container/OU])"
 group_search_filter = "(|(member:1.2.840.113556.1.4.1941:=CN=%s,[user container/OU])(member:1.2.840.113556.1.4.1941:=CN=%s,[another user container/OU]))"
 group_search_filter_user_attribute = "cn"
 ```
+
 For more information on AD searches see [Microsoft's Search Filter Syntax](https://docs.microsoft.com/en-us/windows/desktop/adsi/search-filter-syntax) documentation.
 
 For troubleshooting, by changing `member_of` in `[servers.attributes]` to "dn" it will show you more accurate group memberships when [debug is enabled](#troubleshooting).
@@ -317,7 +355,7 @@ Please inspect your Active Directory configuration and documentation to find the
 
 ## Troubleshooting
 
-To troubleshoot and get more log info enable ldap debug logging in the [main config file]({{< relref "installation/configuration.md" >}}).
+To troubleshoot and get more log info enable ldap debug logging in the [main config file]({{< relref "../installation/configuration.md" >}}).
 
 ```bash
 [log]

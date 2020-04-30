@@ -20,7 +20,8 @@ import (
 	"github.com/grafana/grafana/pkg/infra/metrics"
 	"github.com/grafana/grafana/pkg/login"
 	"github.com/grafana/grafana/pkg/login/social"
-	m "github.com/grafana/grafana/pkg/models"
+	"github.com/grafana/grafana/pkg/middleware"
+	"github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -29,13 +30,16 @@ var (
 	OauthStateCookieName = "oauth_state"
 )
 
-func GenStateString() string {
+func GenStateString() (string, error) {
 	rnd := make([]byte, 32)
-	rand.Read(rnd)
-	return base64.URLEncoding.EncodeToString(rnd)
+	if _, err := rand.Read(rnd); err != nil {
+		oauthLogger.Error("failed to generate state string", "err", err)
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(rnd), nil
 }
 
-func (hs *HTTPServer) OAuthLogin(ctx *m.ReqContext) {
+func (hs *HTTPServer) OAuthLogin(ctx *models.ReqContext) {
 	if setting.OAuthService == nil {
 		ctx.Handle(404, "OAuth not enabled", nil)
 		return
@@ -58,9 +62,15 @@ func (hs *HTTPServer) OAuthLogin(ctx *m.ReqContext) {
 
 	code := ctx.Query("code")
 	if code == "" {
-		state := GenStateString()
+		state, err := GenStateString()
+		if err != nil {
+			ctx.Logger.Error("Generating state string failed", "err", err)
+			ctx.Handle(500, "An internal error occurred", nil)
+			return
+		}
+
 		hashedState := hashStatecode(state, setting.OAuthService.OAuthInfos[name].ClientSecret)
-		hs.writeCookie(ctx.Resp, OauthStateCookieName, hashedState, 60)
+		middleware.WriteCookie(ctx.Resp, OauthStateCookieName, hashedState, hs.Cfg.OAuthCookieMaxAge, hs.CookieOptionsFromCfg)
 		if setting.OAuthService.OAuthInfos[name].HostedDomain == "" {
 			ctx.Redirect(connect.AuthCodeURL(state, oauth2.AccessTypeOnline))
 		} else {
@@ -72,8 +82,7 @@ func (hs *HTTPServer) OAuthLogin(ctx *m.ReqContext) {
 	cookieState := ctx.GetCookie(OauthStateCookieName)
 
 	// delete cookie
-	ctx.Resp.Header().Del("Set-Cookie")
-	hs.deleteCookie(ctx.Resp, OauthStateCookieName)
+	middleware.DeleteCookie(ctx.Resp, OauthStateCookieName, hs.CookieOptionsFromCfg)
 
 	if cookieState == "" {
 		ctx.Handle(500, "login.OAuthLogin(missing saved state)", nil)
@@ -163,22 +172,32 @@ func (hs *HTTPServer) OAuthLogin(ctx *m.ReqContext) {
 		return
 	}
 
-	extUser := &m.ExternalUserInfo{
+	extUser := &models.ExternalUserInfo{
 		AuthModule: "oauth_" + name,
 		OAuthToken: token,
 		AuthId:     userInfo.Id,
 		Name:       userInfo.Name,
 		Login:      userInfo.Login,
 		Email:      userInfo.Email,
-		OrgRoles:   map[int64]m.RoleType{},
+		OrgRoles:   map[int64]models.RoleType{},
+		Groups:     userInfo.Groups,
 	}
 
 	if userInfo.Role != "" {
-		extUser.OrgRoles[1] = m.RoleType(userInfo.Role)
+		rt := models.RoleType(userInfo.Role)
+		if rt.IsValid() {
+			var orgID int64
+			if setting.AutoAssignOrg && setting.AutoAssignOrgId > 0 {
+				orgID = int64(setting.AutoAssignOrgId)
+			} else {
+				orgID = int64(1)
+			}
+			extUser.OrgRoles[orgID] = rt
+		}
 	}
 
 	// add/update user in grafana
-	cmd := &m.UpsertUserCommand{
+	cmd := &models.UpsertUserCommand{
 		ReqContext:    ctx,
 		ExternalUser:  extUser,
 		SignupAllowed: connect.IsSignupAllowed(),
@@ -190,44 +209,36 @@ func (hs *HTTPServer) OAuthLogin(ctx *m.ReqContext) {
 		return
 	}
 
-	// login
-	hs.loginUserWithUser(cmd.Result, ctx)
+	// Do not expose disabled status,
+	// just show incorrect user credentials error (see #17947)
+	if cmd.Result.IsDisabled {
+		oauthLogger.Warn("User is disabled", "user", cmd.Result.Login)
+		hs.redirectWithError(ctx, login.ErrInvalidCredentials)
+		return
+	}
 
-	metrics.M_Api_Login_OAuth.Inc()
+	// login
+	err = hs.loginUserWithUser(cmd.Result, ctx)
+	if err != nil {
+		hs.redirectWithError(ctx, err)
+		return
+	}
+
+	metrics.MApiLoginOAuth.Inc()
 
 	if redirectTo, _ := url.QueryUnescape(ctx.GetCookie("redirect_to")); len(redirectTo) > 0 {
-		ctx.SetCookie("redirect_to", "", -1, setting.AppSubUrl+"/")
-		ctx.Redirect(redirectTo)
-		return
+		if err := hs.ValidateRedirectTo(redirectTo); err == nil {
+			middleware.DeleteCookie(ctx.Resp, "redirect_to", hs.CookieOptionsFromCfg)
+			ctx.Redirect(redirectTo)
+			return
+		}
+		log.Debug("Ignored invalid redirect_to cookie value: %v", redirectTo)
 	}
 
 	ctx.Redirect(setting.AppSubUrl + "/")
 }
 
-func (hs *HTTPServer) deleteCookie(w http.ResponseWriter, name string) {
-	hs.writeCookie(w, name, "", -1)
-}
-
-func (hs *HTTPServer) writeCookie(w http.ResponseWriter, name string, value string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		MaxAge:   maxAge,
-		Value:    value,
-		HttpOnly: true,
-		Path:     setting.AppSubUrl + "/",
-		Secure:   hs.Cfg.CookieSecure,
-		SameSite: hs.Cfg.CookieSameSite,
-	})
-}
-
 func hashStatecode(code, seed string) string {
 	hashBytes := sha256.Sum256([]byte(code + setting.SecretKey + seed))
 	return hex.EncodeToString(hashBytes[:])
-}
-
-func (hs *HTTPServer) redirectWithError(ctx *m.ReqContext, err error, v ...interface{}) {
-	ctx.Logger.Error(err.Error(), v...)
-	hs.trySetEncryptedCookie(ctx, LoginErrorCookieName, err.Error(), 60)
-
-	ctx.Redirect(setting.AppSubUrl + "/login")
 }

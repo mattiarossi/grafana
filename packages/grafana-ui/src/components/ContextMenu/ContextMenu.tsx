@@ -1,12 +1,17 @@
-import React, { useContext, useRef } from 'react';
+import React, { useContext, useRef, useState, useLayoutEffect } from 'react';
 import { css, cx } from 'emotion';
 import useClickAway from 'react-use/lib/useClickAway';
-import { GrafanaTheme, selectThemeVariant, ThemeContext } from '../../index';
+import { selectThemeVariant, ThemeContext } from '../../index';
+import { GrafanaTheme } from '@grafana/data';
+import { stylesFactory } from '../../themes/stylesFactory';
 import { Portal, List } from '../index';
+import { Icon } from '../Icon/Icon';
+import { IconName } from '../../types';
+import { LinkTarget } from '@grafana/data';
 
 export interface ContextMenuItem {
   label: string;
-  target?: string;
+  target?: LinkTarget;
   icon?: string;
   url?: string;
   onClick?: (event?: React.SyntheticEvent<HTMLElement>) => void;
@@ -22,13 +27,13 @@ export interface ContextMenuProps {
   y: number;
   onClose: () => void;
   items?: ContextMenuGroup[];
-  renderHeader?: () => JSX.Element;
+  renderHeader?: () => React.ReactNode;
 }
 
-const getContextMenuStyles = (theme: GrafanaTheme) => {
+const getContextMenuStyles = stylesFactory((theme: GrafanaTheme) => {
   const linkColor = selectThemeVariant(
     {
-      light: theme.colors.dark2,
+      light: theme.palette.dark2,
       dark: theme.colors.text,
     },
     theme.type
@@ -36,35 +41,35 @@ const getContextMenuStyles = (theme: GrafanaTheme) => {
   const linkColorHover = selectThemeVariant(
     {
       light: theme.colors.link,
-      dark: theme.colors.white,
+      dark: theme.palette.white,
     },
     theme.type
   );
   const wrapperBg = selectThemeVariant(
     {
-      light: theme.colors.gray7,
-      dark: theme.colors.dark2,
+      light: theme.palette.gray7,
+      dark: theme.palette.dark2,
     },
     theme.type
   );
   const wrapperShadow = selectThemeVariant(
     {
-      light: theme.colors.gray3,
-      dark: theme.colors.black,
+      light: theme.palette.gray3,
+      dark: theme.palette.black,
     },
     theme.type
   );
   const itemColor = selectThemeVariant(
     {
-      light: theme.colors.black,
-      dark: theme.colors.white,
+      light: theme.palette.black,
+      dark: theme.palette.white,
     },
     theme.type
   );
 
   const groupLabelColor = selectThemeVariant(
     {
-      light: theme.colors.gray1,
+      light: theme.palette.gray1,
       dark: theme.colors.textWeak,
     },
     theme.type
@@ -72,22 +77,22 @@ const getContextMenuStyles = (theme: GrafanaTheme) => {
 
   const itemBgHover = selectThemeVariant(
     {
-      light: theme.colors.gray5,
-      dark: theme.colors.dark7,
+      light: theme.palette.gray5,
+      dark: theme.palette.dark7,
     },
     theme.type
   );
   const headerBg = selectThemeVariant(
     {
-      light: theme.colors.white,
-      dark: theme.colors.dark1,
+      light: theme.palette.white,
+      dark: theme.palette.dark1,
     },
     theme.type
   );
   const headerSeparator = selectThemeVariant(
     {
-      light: theme.colors.white,
-      dark: theme.colors.dark7,
+      light: theme.palette.white,
+      dark: theme.palette.dark7,
     },
     theme.type
   );
@@ -105,6 +110,7 @@ const getContextMenuStyles = (theme: GrafanaTheme) => {
       z-index: 1;
       box-shadow: 0 2px 5px 0 ${wrapperShadow};
       min-width: 200px;
+      display: inline-block;
       border-radius: ${theme.border.radius.sm};
     `,
     link: css`
@@ -124,32 +130,47 @@ const getContextMenuStyles = (theme: GrafanaTheme) => {
       cursor: pointer;
       &:hover {
         background: ${itemBgHover};
-        border-image: linear-gradient(rgba(255, 213, 0, 1) 0%, rgba(255, 68, 0, 1) 99%, rgba(255, 68, 0, 1) 100%);
+        border-image: linear-gradient(#f05a28 30%, #fbca0a 99%);
         border-image-slice: 1;
       }
     `,
     groupLabel: css`
       color: ${groupLabelColor};
       font-size: ${theme.typography.size.sm};
-      line-height: ${theme.typography.lineHeight.lg};
+      line-height: ${theme.typography.lineHeight.md};
       padding: ${theme.spacing.xs} ${theme.spacing.sm};
     `,
     icon: css`
       opacity: 0.7;
-      width: 12px;
-      height: 12px;
-      display: inline-block;
       margin-right: 10px;
       color: ${theme.colors.linkDisabled};
-      position: relative;
-      top: 4px;
     `,
   };
-};
+});
 
 export const ContextMenu: React.FC<ContextMenuProps> = React.memo(({ x, y, onClose, items, renderHeader }) => {
   const theme = useContext(ThemeContext);
-  const menuRef = useRef(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [positionStyles, setPositionStyles] = useState({});
+
+  useLayoutEffect(() => {
+    const menuElement = menuRef.current;
+    if (menuElement) {
+      const rect = menuElement.getBoundingClientRect();
+      const OFFSET = 5;
+      const collisions = {
+        right: window.innerWidth < x + rect.width,
+        bottom: window.innerHeight < rect.bottom + rect.height + OFFSET,
+      };
+
+      setPositionStyles({
+        position: 'fixed',
+        left: collisions.right ? x - rect.width - OFFSET : x - OFFSET,
+        top: collisions.bottom ? y - rect.height - OFFSET : y + OFFSET,
+      });
+    }
+  }, [menuRef.current]);
+
   useClickAway(menuRef, () => {
     if (onClose) {
       onClose();
@@ -157,25 +178,17 @@ export const ContextMenu: React.FC<ContextMenuProps> = React.memo(({ x, y, onClo
   });
 
   const styles = getContextMenuStyles(theme);
-
+  const header = renderHeader && renderHeader();
   return (
     <Portal>
-      <div
-        ref={menuRef}
-        style={{
-          position: 'fixed',
-          left: x - 5,
-          top: y + 5,
-        }}
-        className={styles.wrapper}
-      >
-        {renderHeader && <div className={styles.header}>{renderHeader()}</div>}
+      <div ref={menuRef} style={positionStyles} className={styles.wrapper}>
+        {header && <div className={styles.header}>{header}</div>}
         <List
           items={items || []}
           renderItem={(item, index) => {
             return (
               <>
-                <ContextMenuGroup group={item} onItemClick={onClose} />
+                <ContextMenuGroup group={item} onClick={onClose} />
               </>
             );
           }}
@@ -201,8 +214,8 @@ const ContextMenuItem: React.FC<ContextMenuItemProps> = React.memo(
     return (
       <div className={styles.item}>
         <a
-          href={url}
-          target={target || '_self'}
+          href={url ? url : undefined}
+          target={target}
           className={cx(className, styles.link)}
           onClick={e => {
             if (onClick) {
@@ -210,7 +223,7 @@ const ContextMenuItem: React.FC<ContextMenuItemProps> = React.memo(
             }
           }}
         >
-          {icon && <i className={cx(`${icon}`, styles.icon)} />} {label}
+          {icon && <Icon name={icon as IconName} className={styles.icon} />} {label}
         </a>
       </div>
     );
@@ -219,10 +232,10 @@ const ContextMenuItem: React.FC<ContextMenuItemProps> = React.memo(
 
 interface ContextMenuGroupProps {
   group: ContextMenuGroup;
-  onItemClick?: () => void;
+  onClick?: () => void; // Used with 'onClose'
 }
 
-const ContextMenuGroup: React.FC<ContextMenuGroupProps> = ({ group, onItemClick }) => {
+const ContextMenuGroup: React.FC<ContextMenuGroupProps> = ({ group, onClick }) => {
   const theme = useContext(ThemeContext);
   const styles = getContextMenuStyles(theme);
 
@@ -247,8 +260,9 @@ const ContextMenuGroup: React.FC<ContextMenuGroupProps> = ({ group, onItemClick 
                   item.onClick(e);
                 }
 
-                if (onItemClick) {
-                  onItemClick();
+                // Typically closes the context menu
+                if (onClick) {
+                  onClick();
                 }
               }}
             />

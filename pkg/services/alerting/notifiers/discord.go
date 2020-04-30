@@ -115,17 +115,19 @@ func (dn *DiscordNotifier) Notify(evalContext *alerting.EvalContext) error {
 	var image map[string]interface{}
 	var embeddedImage = false
 
-	if evalContext.ImagePublicURL != "" {
-		image = map[string]interface{}{
-			"url": evalContext.ImagePublicURL,
+	if dn.NeedsImage() {
+		if evalContext.ImagePublicURL != "" {
+			image = map[string]interface{}{
+				"url": evalContext.ImagePublicURL,
+			}
+			embed.Set("image", image)
+		} else {
+			image = map[string]interface{}{
+				"url": "attachment://graph.png",
+			}
+			embed.Set("image", image)
+			embeddedImage = true
 		}
-		embed.Set("image", image)
-	} else {
-		image = map[string]interface{}{
-			"url": "attachment://graph.png",
-		}
-		embed.Set("image", image)
-		embeddedImage = true
 	}
 
 	bodyJSON.Set("embeds", []interface{}{embed})
@@ -158,7 +160,6 @@ func (dn *DiscordNotifier) Notify(evalContext *alerting.EvalContext) error {
 
 func (dn *DiscordNotifier) embedImage(cmd *models.SendWebhookSync, imagePath string, existingJSONBody []byte) error {
 	f, err := os.Open(imagePath)
-	defer f.Close()
 	if err != nil {
 		if os.IsNotExist(err) {
 			cmd.Body = string(existingJSONBody)
@@ -168,6 +169,8 @@ func (dn *DiscordNotifier) embedImage(cmd *models.SendWebhookSync, imagePath str
 			return err
 		}
 	}
+
+	defer f.Close()
 
 	var b bytes.Buffer
 	w := multipart.NewWriter(&b)

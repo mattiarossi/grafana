@@ -1,30 +1,37 @@
 import _ from 'lodash';
-import ansicolor from 'vendor/ansicolor/ansicolor';
+import { colors, ansicolor } from '@grafana/ui';
 
 import {
-  colors,
-  TimeSeries,
   Labels,
   LogLevel,
-  SeriesData,
+  DataFrame,
   findCommonLabels,
   findUniqueLabels,
   getLogLevel,
-  toLegacyResponseData,
-  FieldCache,
   FieldType,
   getLogLevelFromKey,
   LogRowModel,
   LogsModel,
   LogsMetaItem,
   LogsMetaKind,
-  LogsParser,
-  LogLabelStatsModel,
   LogsDedupStrategy,
-} from '@grafana/ui';
+  GraphSeriesXY,
+  dateTimeFormat,
+  dateTimeFormatTimeAgo,
+  NullValueMode,
+  toDataFrame,
+  FieldCache,
+  FieldWithIndex,
+  getFlotPairs,
+  TimeZone,
+  getDisplayProcessor,
+  textUtil,
+  dateTime,
+} from '@grafana/data';
 import { getThemeColor } from 'app/core/utils/colors';
-import { hasAnsiCodes } from 'app/core/utils/text';
-import { dateTime, toUtc } from '@grafana/ui/src/utils/moment_wrapper';
+
+import { sortInAscendingOrder, deduplicateLogRowsById } from 'app/core/utils/explore';
+import { getGraphSeriesModel } from 'app/plugins/panel/graph2/getGraphSeriesModel';
 
 export const LogLevelColor = {
   [LogLevel.critical]: colors[7],
@@ -36,91 +43,8 @@ export const LogLevelColor = {
   [LogLevel.unknown]: getThemeColor('#8e8e8e', '#dde4ed'),
 };
 
-export enum LogsDedupDescription {
-  none = 'No de-duplication',
-  exact = 'De-duplication of successive lines that are identical, ignoring ISO datetimes.',
-  numbers = 'De-duplication of successive lines that are identical when ignoring numbers, e.g., IP addresses, latencies.',
-  signature = 'De-duplication of successive lines that have identical punctuation and whitespace.',
-}
-const LOGFMT_REGEXP = /(?:^|\s)(\w+)=("[^"]*"|\S+)/;
-
-export const LogsParsers: { [name: string]: LogsParser } = {
-  JSON: {
-    buildMatcher: label => new RegExp(`(?:{|,)\\s*"${label}"\\s*:\\s*"?([\\d\\.]+|[^"]*)"?`),
-    getFields: line => {
-      const fields: string[] = [];
-      try {
-        const parsed = JSON.parse(line);
-        _.map(parsed, (value, key) => {
-          const fieldMatcher = new RegExp(`"${key}"\\s*:\\s*"?${_.escapeRegExp(JSON.stringify(value))}"?`);
-
-          const match = line.match(fieldMatcher);
-          if (match) {
-            fields.push(match[0]);
-          }
-        });
-      } catch {}
-      return fields;
-    },
-    getLabelFromField: field => (field.match(/^"(\w+)"\s*:/) || [])[1],
-    getValueFromField: field => (field.match(/:\s*(.*)$/) || [])[1],
-    test: line => {
-      try {
-        return JSON.parse(line);
-      } catch (error) {}
-    },
-  },
-
-  logfmt: {
-    buildMatcher: label => new RegExp(`(?:^|\\s)${label}=("[^"]*"|\\S+)`),
-    getFields: line => {
-      const fields: string[] = [];
-      line.replace(new RegExp(LOGFMT_REGEXP, 'g'), substring => {
-        fields.push(substring.trim());
-        return '';
-      });
-      return fields;
-    },
-    getLabelFromField: field => (field.match(LOGFMT_REGEXP) || [])[1],
-    getValueFromField: field => (field.match(LOGFMT_REGEXP) || [])[2],
-    test: line => LOGFMT_REGEXP.test(line),
-  },
-};
-
-export function calculateFieldStats(rows: LogRowModel[], extractor: RegExp): LogLabelStatsModel[] {
-  // Consider only rows that satisfy the matcher
-  const rowsWithField = rows.filter(row => extractor.test(row.entry));
-  const rowCount = rowsWithField.length;
-
-  // Get field value counts for eligible rows
-  const countsByValue = _.countBy(rowsWithField, row => (row as LogRowModel).entry.match(extractor)[1]);
-  const sortedCounts = _.chain(countsByValue)
-    .map((count, value) => ({ count, value, proportion: count / rowCount }))
-    .sortBy('count')
-    .reverse()
-    .value();
-
-  return sortedCounts;
-}
-
-export function calculateLogsLabelStats(rows: LogRowModel[], label: string): LogLabelStatsModel[] {
-  // Consider only rows that have the given label
-  const rowsWithLabel = rows.filter(row => row.labels[label] !== undefined);
-  const rowCount = rowsWithLabel.length;
-
-  // Get label value counts for eligible rows
-  const countsByValue = _.countBy(rowsWithLabel, row => (row as LogRowModel).labels[label]);
-  const sortedCounts = _.chain(countsByValue)
-    .map((count, value) => ({ count, value, proportion: count / rowCount }))
-    .sortBy('count')
-    .reverse()
-    .value();
-
-  return sortedCounts;
-}
-
 const isoDateRegexp = /\d{4}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d:[0-6]\d[,\.]\d+([+-][0-2]\d:[0-5]\d|Z)/g;
-function isDuplicateRow(row: LogRowModel, other: LogRowModel, strategy: LogsDedupStrategy): boolean {
+function isDuplicateRow(row: LogRowModel, other: LogRowModel, strategy?: LogsDedupStrategy): boolean {
   switch (strategy) {
     case LogsDedupStrategy.exact:
       // Exact still strips dates
@@ -137,61 +61,35 @@ function isDuplicateRow(row: LogRowModel, other: LogRowModel, strategy: LogsDedu
   }
 }
 
-export function dedupLogRows(logs: LogsModel, strategy: LogsDedupStrategy): LogsModel {
+export function dedupLogRows(rows: LogRowModel[], strategy?: LogsDedupStrategy): LogRowModel[] {
   if (strategy === LogsDedupStrategy.none) {
-    return logs;
+    return rows;
   }
 
-  const dedupedRows = logs.rows.reduce((result: LogRowModel[], row: LogRowModel, index, list) => {
+  return rows.reduce((result: LogRowModel[], row: LogRowModel, index) => {
     const rowCopy = { ...row };
     const previous = result[result.length - 1];
     if (index > 0 && isDuplicateRow(row, previous, strategy)) {
-      previous.duplicates++;
+      previous.duplicates!++;
     } else {
       rowCopy.duplicates = 0;
       result.push(rowCopy);
     }
     return result;
   }, []);
-
-  return {
-    ...logs,
-    rows: dedupedRows,
-  };
 }
 
-export function getParser(line: string): LogsParser {
-  let parser;
-  try {
-    if (LogsParsers.JSON.test(line)) {
-      parser = LogsParsers.JSON;
-    }
-  } catch (error) {}
-  if (!parser && LogsParsers.logfmt.test(line)) {
-    parser = LogsParsers.logfmt;
-  }
-  return parser;
-}
-
-export function filterLogLevels(logs: LogsModel, hiddenLogLevels: Set<LogLevel>): LogsModel {
+export function filterLogLevels(logRows: LogRowModel[], hiddenLogLevels: Set<LogLevel>): LogRowModel[] {
   if (hiddenLogLevels.size === 0) {
-    return logs;
+    return logRows;
   }
 
-  const filteredRows = logs.rows.reduce((result: LogRowModel[], row: LogRowModel, index, list) => {
-    if (!hiddenLogLevels.has(row.logLevel)) {
-      result.push(row);
-    }
-    return result;
-  }, []);
-
-  return {
-    ...logs,
-    rows: filteredRows,
-  };
+  return logRows.filter((row: LogRowModel) => {
+    return !hiddenLogLevels.has(row.logLevel);
+  });
 }
 
-export function makeSeriesForLogs(rows: LogRowModel[], intervalMs: number): TimeSeries[] {
+export function makeSeriesForLogs(rows: LogRowModel[], intervalMs: number, timeZone: TimeZone): GraphSeriesXY[] {
   // currently interval is rangeMs / resolution, which is too low for showing series as bars.
   // need at least 10px per bucket, so we multiply interval by 10. Should be solved higher up the chain
   // when executing queries & interval calculated and not here but this is a temporary fix.
@@ -202,7 +100,8 @@ export function makeSeriesForLogs(rows: LogRowModel[], intervalMs: number): Time
   const bucketSize = intervalMs * 10;
   const seriesList: any[] = [];
 
-  for (const row of rows) {
+  const sortedRows = rows.sort(sortInAscendingOrder);
+  for (const row of sortedRows) {
     let series = seriesByLevel[row.logLevel];
 
     if (!series) {
@@ -210,14 +109,16 @@ export function makeSeriesForLogs(rows: LogRowModel[], intervalMs: number): Time
         lastTs: null,
         datapoints: [],
         alias: row.logLevel,
+        target: row.logLevel,
         color: LogLevelColor[row.logLevel],
       };
 
       seriesList.push(series);
     }
 
-    // align time to bucket size
-    const time = Math.round(row.timeEpochMs / bucketSize) * bucketSize;
+    // align time to bucket size - used Math.floor for calculation as time of the bucket
+    // must be in the past (before Date.now()) to be displayed on the graph
+    const time = Math.floor(row.timeEpochMs / bucketSize) * bucketSize;
 
     // Entry for time
     if (time === series.lastTs) {
@@ -236,46 +137,89 @@ export function makeSeriesForLogs(rows: LogRowModel[], intervalMs: number): Time
     }
   }
 
-  return seriesList.map(series => {
-    series.datapoints.sort((a: number[], b: number[]) => {
-      return a[1] - b[1];
+  return seriesList.map((series, i) => {
+    series.datapoints.sort((a: number[], b: number[]) => a[1] - b[1]);
+
+    // EEEP: converts GraphSeriesXY to DataFrame and back again!
+    const data = toDataFrame(series);
+    const fieldCache = new FieldCache(data);
+
+    const timeField = fieldCache.getFirstFieldOfType(FieldType.time);
+    timeField.display = getDisplayProcessor({
+      field: timeField,
+      timeZone,
     });
 
-    return {
-      datapoints: series.datapoints,
-      target: series.alias,
-      alias: series.alias,
+    const valueField = fieldCache.getFirstFieldOfType(FieldType.number);
+    valueField.config = {
+      ...valueField.config,
       color: series.color,
     };
+
+    const points = getFlotPairs({
+      xField: timeField,
+      yField: valueField,
+      nullValueMode: NullValueMode.Null,
+    });
+
+    const graphSeries: GraphSeriesXY = {
+      color: series.color,
+      label: series.alias,
+      data: points,
+      isVisible: true,
+      yAxis: {
+        index: 1,
+        min: 0,
+        tickDecimals: 0,
+      },
+      seriesIndex: i,
+      timeField,
+      valueField,
+      // for now setting the time step to be 0,
+      // and handle the bar width by setting lineWidth instead of barWidth in flot options
+      timeStep: 0,
+    };
+
+    return graphSeries;
   });
 }
 
-function isLogsData(series: SeriesData) {
+function isLogsData(series: DataFrame) {
   return series.fields.some(f => f.type === FieldType.time) && series.fields.some(f => f.type === FieldType.string);
 }
 
-export function seriesDataToLogsModel(seriesData: SeriesData[], intervalMs: number): LogsModel {
-  const metricSeries: SeriesData[] = [];
-  const logSeries: SeriesData[] = [];
-
-  for (const series of seriesData) {
-    if (isLogsData(series)) {
-      logSeries.push(series);
-      continue;
-    }
-
-    metricSeries.push(series);
-  }
-
+/**
+ * Convert dataFrame into LogsModel which consists of creating separate array of log rows and metrics series. Metrics
+ * series can be either already included in the dataFrame or will be computed from the log rows.
+ * @param dataFrame
+ * @param intervalMs In case there are no metrics series, we use this for computing it from log rows.
+ */
+export function dataFrameToLogsModel(
+  dataFrame: DataFrame[],
+  intervalMs: number | undefined,
+  timeZone: TimeZone
+): LogsModel {
+  const { logSeries, metricSeries } = separateLogsAndMetrics(dataFrame);
   const logsModel = logSeriesToLogsModel(logSeries);
+
   if (logsModel) {
     if (metricSeries.length === 0) {
-      logsModel.series = makeSeriesForLogs(logsModel.rows, intervalMs);
+      // Create metrics from logs
+      // If interval is not defined or 0 we cannot really compute the series
+      logsModel.series = intervalMs ? makeSeriesForLogs(logsModel.rows, intervalMs, timeZone) : [];
     } else {
-      logsModel.series = [];
-      for (const series of metricSeries) {
-        logsModel.series.push(toLegacyResponseData(series) as TimeSeries);
-      }
+      // We got metrics in the dataFrame so process those
+      logsModel.series = getGraphSeriesModel(
+        metricSeries,
+        timeZone,
+        {},
+        { showBars: true, showLines: false, showPoints: false },
+        {
+          asTable: false,
+          isVisible: true,
+          placement: 'under',
+        }
+      );
     }
 
     return logsModel;
@@ -289,43 +233,121 @@ export function seriesDataToLogsModel(seriesData: SeriesData[], intervalMs: numb
   };
 }
 
-export function logSeriesToLogsModel(logSeries: SeriesData[]): LogsModel {
-  if (logSeries.length === 0) {
-    return undefined;
-  }
+function separateLogsAndMetrics(dataFrames: DataFrame[]) {
+  const metricSeries: DataFrame[] = [];
+  const logSeries: DataFrame[] = [];
 
-  const allLabels: Labels[] = [];
-  for (let n = 0; n < logSeries.length; n++) {
-    const series = logSeries[n];
-    if (series.labels) {
-      allLabels.push(series.labels);
+  for (const dataFrame of dataFrames) {
+    if (isLogsData(dataFrame)) {
+      logSeries.push(dataFrame);
+      continue;
+    }
+
+    if (dataFrame.length > 0) {
+      metricSeries.push(dataFrame);
     }
   }
 
-  let commonLabels: Labels = {};
-  if (allLabels.length > 0) {
-    commonLabels = findCommonLabels(allLabels);
+  return { logSeries, metricSeries };
+}
+
+interface LogFields {
+  series: DataFrame;
+
+  timeField: FieldWithIndex;
+  stringField: FieldWithIndex;
+  logLevelField?: FieldWithIndex;
+  idField?: FieldWithIndex;
+}
+
+/**
+ * Converts dataFrames into LogsModel. This involves merging them into one list, sorting them and computing metadata
+ * like common labels.
+ */
+export function logSeriesToLogsModel(logSeries: DataFrame[]): LogsModel | undefined {
+  if (logSeries.length === 0) {
+    return undefined;
   }
+  const allLabels: Labels[] = [];
+
+  // Find the fields we care about and collect all labels
+  const allSeries: LogFields[] = logSeries.map(series => {
+    const fieldCache = new FieldCache(series);
+
+    const stringField = fieldCache.hasFieldNamed('line')
+      ? fieldCache.getFieldByName('line')
+      : fieldCache.getFirstFieldOfType(FieldType.string);
+    if (stringField?.labels) {
+      allLabels.push(stringField.labels);
+    }
+    return {
+      series,
+      timeField: fieldCache.getFirstFieldOfType(FieldType.time),
+      stringField,
+      logLevelField: fieldCache.getFieldByName('level'),
+      idField: getIdField(fieldCache),
+    } as LogFields;
+  });
+
+  const commonLabels = allLabels.length > 0 ? findCommonLabels(allLabels) : {};
 
   const rows: LogRowModel[] = [];
   let hasUniqueLabels = false;
 
-  for (let i = 0; i < logSeries.length; i++) {
-    const series = logSeries[i];
-    const fieldCache = new FieldCache(series.fields);
-    const uniqueLabels = findUniqueLabels(series.labels, commonLabels);
+  for (const info of allSeries) {
+    const { timeField, stringField, logLevelField, idField, series } = info;
+    const labels = stringField.labels;
+    const uniqueLabels = findUniqueLabels(labels, commonLabels);
     if (Object.keys(uniqueLabels).length > 0) {
       hasUniqueLabels = true;
     }
 
-    for (let j = 0; j < series.rows.length; j++) {
-      rows.push(processLogSeriesRow(series, fieldCache, j, uniqueLabels));
+    let seriesLogLevel: LogLevel | undefined = undefined;
+    if (labels && Object.keys(labels).indexOf('level') !== -1) {
+      seriesLogLevel = getLogLevelFromKey(labels['level']);
+    }
+
+    for (let j = 0; j < series.length; j++) {
+      const ts = timeField.values.get(j);
+      const time = dateTime(ts);
+
+      const messageValue: unknown = stringField.values.get(j);
+      // This should be string but sometimes isn't (eg elastic) because the dataFrame is not strongly typed.
+      const message: string = typeof messageValue === 'string' ? messageValue : JSON.stringify(messageValue);
+
+      const hasAnsi = textUtil.hasAnsiCodes(message);
+      const searchWords = series.meta && series.meta.searchWords ? series.meta.searchWords : [];
+
+      let logLevel = LogLevel.unknown;
+      if (logLevelField && logLevelField.values.get(j)) {
+        logLevel = getLogLevelFromKey(logLevelField.values.get(j));
+      } else if (seriesLogLevel) {
+        logLevel = seriesLogLevel;
+      } else {
+        logLevel = getLogLevel(message);
+      }
+
+      rows.push({
+        entryFieldIndex: stringField.index,
+        rowIndex: j,
+        dataFrame: series,
+        logLevel,
+        timeFromNow: dateTimeFormatTimeAgo(ts),
+        timeEpochMs: time.valueOf(),
+        timeLocal: dateTimeFormat(ts, { timeZone: 'browser' }),
+        timeUtc: dateTimeFormat(ts, { timeZone: 'utc' }),
+        uniqueLabels,
+        hasAnsi,
+        searchWords,
+        entry: hasAnsi ? ansicolor.strip(message) : message,
+        raw: message,
+        labels: stringField.labels || {},
+        uid: idField ? idField.values.get(j) : j.toString(),
+      });
     }
   }
 
-  const sortedRows = rows.sort((a, b) => {
-    return a.timestamp > b.timestamp ? -1 : 1;
-  });
+  const deduplicatedLogRows = deduplicateLogRowsById(rows);
 
   // Meta data to display in status
   const meta: LogsMetaItem[] = [];
@@ -338,11 +360,17 @@ export function logSeriesToLogsModel(logSeries: SeriesData[]): LogsModel {
   }
 
   const limits = logSeries.filter(series => series.meta && series.meta.limit);
+  const limitValue = Object.values(
+    limits.reduce((acc: any, elem: any) => {
+      acc[elem.refId] = elem.meta.limit;
+      return acc;
+    }, {})
+  ).reduce((acc: number, elem: any) => (acc += elem), 0);
 
   if (limits.length > 0) {
     meta.push({
       label: 'Limit',
-      value: `${limits[0].meta.limit} (${sortedRows.length} returned)`,
+      value: `${limitValue} (${deduplicatedLogRows.length} returned)`,
       kind: LogsMetaKind.String,
     });
   }
@@ -350,52 +378,17 @@ export function logSeriesToLogsModel(logSeries: SeriesData[]): LogsModel {
   return {
     hasUniqueLabels,
     meta,
-    rows: sortedRows,
+    rows: deduplicatedLogRows,
   };
 }
 
-export function processLogSeriesRow(
-  series: SeriesData,
-  fieldCache: FieldCache,
-  rowIndex: number,
-  uniqueLabels: Labels
-): LogRowModel {
-  const row = series.rows[rowIndex];
-  const timeFieldIndex = fieldCache.getFirstFieldOfType(FieldType.time).index;
-  const ts = row[timeFieldIndex];
-  const stringFieldIndex = fieldCache.getFirstFieldOfType(FieldType.string).index;
-  const message = row[stringFieldIndex];
-  const time = dateTime(ts);
-  const timeEpochMs = time.valueOf();
-  const timeFromNow = time.fromNow();
-  const timeLocal = time.format('YYYY-MM-DD HH:mm:ss');
-  const timeUtc = toUtc(ts).format('YYYY-MM-DD HH:mm:ss');
-
-  let logLevel = LogLevel.unknown;
-  const logLevelField = fieldCache.getFieldByName('level');
-
-  if (logLevelField) {
-    logLevel = getLogLevelFromKey(row[logLevelField.index]);
-  } else if (series.labels && Object.keys(series.labels).indexOf('level') !== -1) {
-    logLevel = getLogLevelFromKey(series.labels['level']);
-  } else {
-    logLevel = getLogLevel(message);
+function getIdField(fieldCache: FieldCache): FieldWithIndex | undefined {
+  const idFieldNames = ['id'];
+  for (const fieldName of idFieldNames) {
+    const idField = fieldCache.getFieldByName(fieldName);
+    if (idField) {
+      return idField;
+    }
   }
-  const hasAnsi = hasAnsiCodes(message);
-  const searchWords = series.meta && series.meta.searchWords ? series.meta.searchWords : [];
-
-  return {
-    logLevel,
-    timeFromNow,
-    timeEpochMs,
-    timeLocal,
-    timeUtc,
-    uniqueLabels,
-    hasAnsi,
-    searchWords,
-    entry: hasAnsi ? ansicolor.strip(message) : message,
-    raw: message,
-    labels: series.labels,
-    timestamp: ts,
-  };
+  return undefined;
 }

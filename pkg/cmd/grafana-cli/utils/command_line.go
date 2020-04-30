@@ -1,11 +1,14 @@
 package utils
 
 import (
-	"github.com/codegangsta/cli"
+	"os"
+
+	"github.com/grafana/grafana/pkg/cmd/grafana-cli/models"
+	"github.com/urfave/cli/v2"
 )
 
 type CommandLine interface {
-	ShowHelp()
+	ShowHelp() error
 	ShowVersion()
 	Application() *cli.App
 	Args() cli.Args
@@ -13,7 +16,6 @@ type CommandLine interface {
 	Int(name string) int
 	String(name string) string
 	StringSlice(name string) []string
-	GlobalString(name string) string
 	FlagNames() (names []string)
 	Generic(name string) interface{}
 
@@ -22,12 +24,18 @@ type CommandLine interface {
 	PluginURL() string
 }
 
+type ApiClient interface {
+	GetPlugin(pluginId, repoUrl string) (models.Plugin, error)
+	DownloadFile(pluginName string, tmpFile *os.File, url string, checksum string) (err error)
+	ListAllPlugins(repoUrl string) (models.PluginRepo, error)
+}
+
 type ContextCommandLine struct {
 	*cli.Context
 }
 
-func (c *ContextCommandLine) ShowHelp() {
-	cli.ShowCommandHelp(c.Context, c.Command.Name)
+func (c *ContextCommandLine) ShowHelp() error {
+	return cli.ShowCommandHelp(c.Context, c.Command.Name)
 }
 
 func (c *ContextCommandLine) ShowVersion() {
@@ -38,22 +46,22 @@ func (c *ContextCommandLine) Application() *cli.App {
 	return c.App
 }
 
-func (c *ContextCommandLine) HomePath() string { return c.GlobalString("homepath") }
+func (c *ContextCommandLine) HomePath() string { return c.String("homepath") }
 
-func (c *ContextCommandLine) ConfigFile() string { return c.GlobalString("config") }
+func (c *ContextCommandLine) ConfigFile() string { return c.String("config") }
 
 func (c *ContextCommandLine) PluginDirectory() string {
-	return c.GlobalString("pluginsDir")
+	return c.String("pluginsDir")
 }
 
 func (c *ContextCommandLine) RepoDirectory() string {
-	return c.GlobalString("repo")
+	return c.String("repo")
 }
 
 func (c *ContextCommandLine) PluginURL() string {
-	return c.GlobalString("pluginUrl")
+	return c.String("pluginUrl")
 }
 
 func (c *ContextCommandLine) OptionsString() string {
-	return c.GlobalString("configOverrides")
+	return c.String("configOverrides")
 }

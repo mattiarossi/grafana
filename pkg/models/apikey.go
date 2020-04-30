@@ -7,6 +7,7 @@ import (
 
 var ErrInvalidApiKey = errors.New("Invalid API Key")
 var ErrInvalidApiKeyExpiration = errors.New("Negative value for SecondsToLive")
+var ErrDuplicateApiKey = errors.New("API Key Organization ID And Name Must Be Unique")
 
 type ApiKey struct {
 	Id      int64
@@ -49,7 +50,7 @@ type DeleteApiKeyCommand struct {
 
 type GetApiKeysQuery struct {
 	OrgId          int64
-	IncludeInvalid bool
+	IncludeExpired bool
 	Result         []*ApiKey
 }
 

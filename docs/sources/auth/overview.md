@@ -16,18 +16,18 @@ permissions and org memberships.
 
 ## OAuth Integrations
 
-- [Google OAuth]({{< relref "auth/google.md" >}})
-- [GitHub OAuth]({{< relref "auth/github.md" >}})
-- [Gitlab OAuth]({{< relref "auth/gitlab.md" >}})
-- [Generic OAuth]({{< relref "auth/generic-oauth.md" >}}) (Okta2, BitBucket, Azure, OneLogin, Auth0)
+- [Google OAuth]({{< relref "google.md" >}})
+- [GitHub OAuth]({{< relref "github.md" >}})
+- [Gitlab OAuth]({{< relref "gitlab.md" >}})
+- [Generic OAuth]({{< relref "generic-oauth.md" >}}) (Okta2, BitBucket, Azure, OneLogin, Auth0)
 
 ## LDAP integrations
 
-- [LDAP Authentication]({{< relref "auth/ldap.md" >}}) (OpenLDAP, ActiveDirectory, etc)
+- [LDAP Authentication]({{< relref "ldap.md" >}}) (OpenLDAP, ActiveDirectory, etc)
 
 ## Auth proxy
 
-- [Auth Proxy]({{< relref "auth/auth-proxy.md" >}}) If you want to handle authentication outside Grafana using a reverse
+- [Auth Proxy]({{< relref "auth-proxy.md" >}}) If you want to handle authentication outside Grafana using a reverse
     proxy.
 
 ## Grafana Auth
@@ -46,6 +46,13 @@ These short-lived tokens are rotated each `token_rotation_interval_minutes` for 
 An active authenticated user that gets it token rotated will extend the `login_maximum_inactive_lifetime_days` time from "now" that Grafana will remember the user.
 This means that a user can close its browser and come back before `now + login_maximum_inactive_lifetime_days` and still being authenticated.
  This is true as long as the time since user login is less than `login_maximum_lifetime_days`.
+
+#### Remote logout
+
+You can logout from other devices by removing login sessions from the bottom of your profile page. If you are
+a Grafana admin user you can also do the same for any user from the Server Admin / Edit User view.
+
+## Settings
 
 Example:
 
@@ -121,7 +128,7 @@ oauth_auto_login = true
 
 ### Hide sign-out menu
 
-Set to the option detailed below to true to hide sign-out menu link. Useful if you use an auth proxy.
+Set the option detailed below to true to hide sign-out menu link. Useful if you use an auth proxy.
 
 ```bash
 [auth]

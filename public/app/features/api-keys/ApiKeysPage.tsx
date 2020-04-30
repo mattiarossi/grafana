@@ -2,25 +2,32 @@ import React, { PureComponent } from 'react';
 import ReactDOMServer from 'react-dom/server';
 import { connect } from 'react-redux';
 import { hot } from 'react-hot-loader';
-import { ApiKey, NewApiKey, OrgRole } from 'app/types';
+// Utils
+import { ApiKey, CoreEvents, NewApiKey, OrgRole } from 'app/types';
 import { getNavModel } from 'app/core/selectors/navModel';
 import { getApiKeys, getApiKeysCount } from './state/selectors';
-import { loadApiKeys, deleteApiKey, setSearchQuery, addApiKey } from './state/actions';
+import { addApiKey, deleteApiKey, loadApiKeys } from './state/actions';
 import Page from 'app/core/components/Page/Page';
 import { SlideDown } from 'app/core/components/Animations/SlideDown';
 import ApiKeysAddedModal from './ApiKeysAddedModal';
 import config from 'app/core/config';
 import appEvents from 'app/core/app_events';
 import EmptyListCTA from 'app/core/components/EmptyListCTA/EmptyListCTA';
-import { DeleteButton, EventsWithValidation, FormLabel, Input, ValidationEvents } from '@grafana/ui';
-import { NavModel } from '@grafana/data';
+import {
+  DeleteButton,
+  EventsWithValidation,
+  InlineFormLabel,
+  LegacyForms,
+  ValidationEvents,
+  IconButton,
+} from '@grafana/ui';
+const { Input, Switch } = LegacyForms;
+import { NavModel, dateTimeFormat } from '@grafana/data';
 import { FilterInput } from 'app/core/components/FilterInput/FilterInput';
 import { store } from 'app/store/store';
 import kbn from 'app/core/utils/kbn';
-
-// Utils
-import { dateTime, isDateTime } from '@grafana/ui/src/utils/moment_wrapper';
 import { getTimeZone } from 'app/features/profile/state/selectors';
+import { setSearchQuery } from './state/reducers';
 
 const timeRangeValidationEvents: ValidationEvents = {
   [EventsWithValidation.onBlur]: [
@@ -51,6 +58,7 @@ export interface Props {
   setSearchQuery: typeof setSearchQuery;
   addApiKey: typeof addApiKey;
   apiKeysCount: number;
+  includeExpired: boolean;
 }
 
 export interface State {
@@ -74,9 +82,9 @@ const tooltipText =
   'The api key life duration. For example 1d if your key is going to last for one day. All the supported units are: s,m,h,d,w,M,y';
 
 export class ApiKeysPage extends PureComponent<Props, any> {
-  constructor(props) {
+  constructor(props: Props) {
     super(props);
-    this.state = { isAdding: false, newApiKey: initialApiKeyState };
+    this.state = { isAdding: false, newApiKey: initialApiKeyState, includeExpired: false };
   }
 
   componentDidMount() {
@@ -84,29 +92,33 @@ export class ApiKeysPage extends PureComponent<Props, any> {
   }
 
   async fetchApiKeys() {
-    await this.props.loadApiKeys();
+    await this.props.loadApiKeys(this.state.includeExpired);
   }
 
   onDeleteApiKey(key: ApiKey) {
-    this.props.deleteApiKey(key.id);
+    this.props.deleteApiKey(key.id, this.props.includeExpired);
   }
 
   onSearchQueryChange = (value: string) => {
     this.props.setSearchQuery(value);
   };
 
+  onIncludeExpiredChange = (value: boolean) => {
+    this.setState({ hasFetched: false, includeExpired: value }, this.fetchApiKeys);
+  };
+
   onToggleAdding = () => {
     this.setState({ isAdding: !this.state.isAdding });
   };
 
-  onAddApiKey = async evt => {
+  onAddApiKey = async (evt: any) => {
     evt.preventDefault();
 
     const openModal = (apiKey: string) => {
       const rootPath = window.location.origin + config.appSubUrl;
       const modalTemplate = ReactDOMServer.renderToString(<ApiKeysAddedModal apiKey={apiKey} rootPath={rootPath} />);
 
-      appEvents.emit('show-modal', {
+      appEvents.emit(CoreEvents.showModal, {
         templateHtml: modalTemplate,
       });
     };
@@ -114,7 +126,7 @@ export class ApiKeysPage extends PureComponent<Props, any> {
     // make sure that secondsToLive is number or null
     const secondsToLive = this.state.newApiKey['secondsToLive'];
     this.state.newApiKey['secondsToLive'] = secondsToLive ? kbn.interval_to_seconds(secondsToLive) : null;
-    this.props.addApiKey(this.state.newApiKey, openModal);
+    this.props.addApiKey(this.state.newApiKey, openModal, this.props.includeExpired);
     this.setState((prevState: State) => {
       return {
         ...prevState,
@@ -124,10 +136,10 @@ export class ApiKeysPage extends PureComponent<Props, any> {
     });
   };
 
-  onApiKeyStateUpdate = (evt, prop: string) => {
+  onApiKeyStateUpdate = (evt: any, prop: string) => {
     const value = evt.currentTarget.value;
     this.setState((prevState: State) => {
-      const newApiKey = {
+      const newApiKey: any = {
         ...prevState.newApiKey,
       };
       newApiKey[prop] = value;
@@ -145,17 +157,12 @@ export class ApiKeysPage extends PureComponent<Props, any> {
       <>
         {!isAdding && (
           <EmptyListCTA
-            model={{
-              title: "You haven't added any API Keys yet.",
-              buttonIcon: 'gicon gicon-apikeys',
-              buttonLink: '#',
-              onClick: this.onToggleAdding,
-              buttonTitle: ' New API Key',
-              proTip: 'Remember you can provide view-only API access to other applications.',
-              proTipLink: '',
-              proTipLinkTitle: '',
-              proTipTarget: '_blank',
-            }}
+            title="You haven't added any API Keys yet."
+            buttonIcon="key-skeleton-alt"
+            buttonLink="#"
+            onClick={this.onToggleAdding}
+            buttonTitle=" New API Key"
+            proTip="Remember you can provide view-only API access to other applications."
           />
         )}
         {this.renderAddApiKeyForm()}
@@ -163,15 +170,12 @@ export class ApiKeysPage extends PureComponent<Props, any> {
     );
   }
 
-  formatDate(date, format?) {
+  formatDate(date: any, format?: string) {
     if (!date) {
       return 'No expiration date';
     }
-    date = isDateTime(date) ? date : dateTime(date);
-    format = format || 'YYYY-MM-DD HH:mm:ss';
-    const timezone = getTimeZone(store.getState().user);
-
-    return timezone === 'utc' ? date.utc().format(format) : date.format(format);
+    const timeZone = getTimeZone(store.getState().user);
+    return dateTimeFormat(date, { format, timeZone });
   }
 
   renderAddApiKeyForm() {
@@ -180,9 +184,7 @@ export class ApiKeysPage extends PureComponent<Props, any> {
     return (
       <SlideDown in={isAdding}>
         <div className="cta-form">
-          <button className="cta-form__close btn btn-transparent" onClick={this.onToggleAdding}>
-            <i className="fa fa-close" />
-          </button>
+          <IconButton name="times" className="cta-form__close btn btn-transparent" onClick={this.onToggleAdding} />
           <h5>Add API Key</h5>
           <form className="gf-form-group" onSubmit={this.onAddApiKey}>
             <div className="gf-form-inline">
@@ -215,7 +217,7 @@ export class ApiKeysPage extends PureComponent<Props, any> {
                 </span>
               </div>
               <div className="gf-form max-width-21">
-                <FormLabel tooltip={tooltipText}>Time to live</FormLabel>
+                <InlineFormLabel tooltip={tooltipText}>Time to live</InlineFormLabel>
                 <Input
                   type="text"
                   className="gf-form-input"
@@ -237,7 +239,7 @@ export class ApiKeysPage extends PureComponent<Props, any> {
 
   renderApiKeyList() {
     const { isAdding } = this.state;
-    const { apiKeys, searchQuery } = this.props;
+    const { apiKeys, searchQuery, includeExpired } = this.props;
 
     return (
       <>
@@ -261,6 +263,14 @@ export class ApiKeysPage extends PureComponent<Props, any> {
         {this.renderAddApiKeyForm()}
 
         <h3 className="page-heading">Existing Keys</h3>
+        <Switch
+          label="Show expired"
+          checked={includeExpired}
+          onChange={event => {
+            // @ts-ignore
+            this.onIncludeExpiredChange(event.target.checked);
+          }}
+        />
         <table className="filter-table">
           <thead>
             <tr>
@@ -279,7 +289,7 @@ export class ApiKeysPage extends PureComponent<Props, any> {
                     <td>{key.role}</td>
                     <td>{this.formatDate(key.expiration)}</td>
                     <td>
-                      <DeleteButton onConfirm={() => this.onDeleteApiKey(key)} />
+                      <DeleteButton size="sm" onConfirm={() => this.onDeleteApiKey(key)} />
                     </td>
                   </tr>
                 );
@@ -304,11 +314,12 @@ export class ApiKeysPage extends PureComponent<Props, any> {
   }
 }
 
-function mapStateToProps(state) {
+function mapStateToProps(state: any) {
   return {
     navModel: getNavModel(state.navIndex, 'apikeys'),
     apiKeys: getApiKeys(state.apiKeys),
     searchQuery: state.apiKeys.searchQuery,
+    includeExpired: state.includeExpired,
     apiKeysCount: getApiKeysCount(state.apiKeys),
     hasFetched: state.apiKeys.hasFetched,
   };
@@ -321,9 +332,4 @@ const mapDispatchToProps = {
   addApiKey,
 };
 
-export default hot(module)(
-  connect(
-    mapStateToProps,
-    mapDispatchToProps
-  )(ApiKeysPage)
-);
+export default hot(module)(connect(mapStateToProps, mapDispatchToProps)(ApiKeysPage));

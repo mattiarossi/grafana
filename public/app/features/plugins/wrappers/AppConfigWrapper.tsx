@@ -3,10 +3,10 @@ import React, { PureComponent } from 'react';
 import cloneDeep from 'lodash/cloneDeep';
 import extend from 'lodash/extend';
 
-import { PluginMeta, AppPlugin, Button } from '@grafana/ui';
+import { Button } from '@grafana/ui';
+import { PluginMeta, AppPlugin, deprecationWarning } from '@grafana/data';
+import { AngularComponent, getAngularLoader, getBackendSrv } from '@grafana/runtime';
 
-import { AngularComponent, getAngularLoader } from '@grafana/runtime';
-import { getBackendSrv } from 'app/core/services/backend_srv';
 import { css } from 'emotion';
 
 interface Props {
@@ -80,7 +80,7 @@ export class AppConfigCtrlWrapper extends PureComponent<Props, State> {
               </Button>
             )}
             {model.enabled && (
-              <Button variant="danger" onClick={this.disable} className={withRightMargin}>
+              <Button variant="destructive" onClick={this.disable} className={withRightMargin}>
                 Disable
               </Button>
             )}
@@ -122,6 +122,12 @@ export class AppConfigCtrlWrapper extends PureComponent<Props, State> {
 
   setPostUpdateHook = (callback: () => any) => {
     this.postUpdateHook = callback;
+  };
+
+  // Stub to avoid unknown function in legacy code
+  importDashboards = (): Promise<void> => {
+    deprecationWarning('AppConfig', 'importDashboards()');
+    return Promise.resolve();
   };
 
   enable = () => {

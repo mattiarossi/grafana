@@ -5,14 +5,12 @@ module.exports = function(grunt) {
   // prettier-ignore
   grunt.registerTask('default', [
     'clean:build',
-    'phantomjs',
-    'webpack:dev'
   ]);
 
   // prettier-ignore
   grunt.registerTask('test', [
     'sasslint',
-    'tslint',
+    'eslint',
     'typecheck',
     'exec:jest',
     'no-only-tests',
@@ -20,9 +18,9 @@ module.exports = function(grunt) {
   ]);
 
   // prettier-ignore
-  grunt.registerTask('tslint', [
-    'newer:exec:tslintPackages',
-    'newer:exec:tslintRoot'
+  grunt.registerTask('eslint', [
+    'newer:exec:eslintPackages',
+    'newer:exec:eslintRoot'
   ]);
 
   // prettier-ignore

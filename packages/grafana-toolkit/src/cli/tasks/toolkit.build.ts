@@ -1,9 +1,10 @@
 import execa = require('execa');
 import * as fs from 'fs';
-import { changeCwdToGrafanaUi, restoreCwd, changeCwdToGrafanaToolkit } from '../utils/cwd';
 import chalk from 'chalk';
 import { useSpinner } from '../utils/useSpinner';
 import { Task, TaskRunner } from './task';
+
+const path = require('path');
 
 let distDir: string, cwd: string;
 
@@ -39,7 +40,7 @@ export const savePackage = useSpinner<{
 
 const preparePackage = async (pkg: any) => {
   pkg.bin = {
-    'grafana-toolkit': './bin/grafana-toolkit.dist.js',
+    'grafana-toolkit': './bin/grafana-toolkit.js',
   };
 
   await savePackage({
@@ -48,18 +49,28 @@ const preparePackage = async (pkg: any) => {
   });
 };
 
-const moveFiles = () => {
+const copyFiles = () => {
   const files = [
     'README.md',
     'CHANGELOG.md',
-    'bin/grafana-toolkit.dist.js',
+    'config/circleci/config.yml',
+    'bin/grafana-toolkit.js',
+    'src/config/prettier.plugin.config.json',
+    'src/config/prettier.plugin.rc.js',
     'src/config/tsconfig.plugin.json',
-    'src/config/tslint.plugin.json',
+    'src/config/tsconfig.plugin.local.json',
+    'src/config/eslint.plugin.json',
+    'src/config/styles.mock.js',
+    'src/config/jest.plugin.config.local.js',
   ];
   // @ts-ignore
   return useSpinner<void>(`Moving ${files.join(', ')} files`, async () => {
     const promises = files.map(file => {
       return new Promise((resolve, reject) => {
+        const basedir = path.dirname(`${distDir}/${file}`);
+        if (!fs.existsSync(basedir)) {
+          fs.mkdirSync(basedir, { recursive: true });
+        }
         fs.copyFile(`${cwd}/${file}`, `${distDir}/${file}`, err => {
           if (err) {
             reject(err);
@@ -74,8 +85,32 @@ const moveFiles = () => {
   })();
 };
 
-const toolkitBuildTaskRunner: TaskRunner<void> = async () => {
-  cwd = changeCwdToGrafanaToolkit();
+const copySassFiles = () => {
+  const files = ['_variables.generated.scss', '_variables.dark.generated.scss', '_variables.light.generated.scss'];
+  // @ts-ignore
+  return useSpinner<void>(`Copy scss files ${files.join(', ')} files`, async () => {
+    const sassDir = path.resolve(cwd, '../../public/sass/');
+    const promises = files.map(file => {
+      return new Promise((resolve, reject) => {
+        const name = file.replace('.generated', '');
+        fs.copyFile(`${sassDir}/${file}`, `${distDir}/sass/${name}`, err => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        });
+      });
+    });
+
+    await Promise.all(promises);
+  })();
+};
+
+interface ToolkitBuildOptions {}
+
+const toolkitBuildTaskRunner: TaskRunner<ToolkitBuildOptions> = async () => {
+  cwd = path.resolve(__dirname, '../../../');
   distDir = `${cwd}/dist`;
   const pkg = require(`${cwd}/package.json`);
   console.log(chalk.yellow(`Building ${pkg.name} (package.json version: ${pkg.version})`));
@@ -84,8 +119,9 @@ const toolkitBuildTaskRunner: TaskRunner<void> = async () => {
   await compile();
   await preparePackage(pkg);
   fs.mkdirSync('./dist/bin');
-  await moveFiles();
-  restoreCwd();
+  fs.mkdirSync('./dist/sass');
+  await copyFiles();
+  await copySassFiles();
 };
 
-export const toolkitBuildTask = new Task<void>('@grafana/toolkit build', toolkitBuildTaskRunner);
+export const toolkitBuildTask = new Task<ToolkitBuildOptions>('@grafana/toolkit build', toolkitBuildTaskRunner);

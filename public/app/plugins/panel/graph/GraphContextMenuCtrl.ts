@@ -1,19 +1,11 @@
 import { ContextMenuItem } from '@grafana/ui';
-
-export interface FlotDataPoint {
-  dataIndex: number;
-  datapoint: number[];
-  pageX: number;
-  pageY: number;
-  series: any;
-  seriesIndex: number;
-}
+import { FlotDataPoint } from '@grafana/data';
 
 export class GraphContextMenuCtrl {
   private source?: FlotDataPoint | null;
   private scope?: any;
-  menuItems: ContextMenuItem[];
-  scrollContextElement: HTMLElement;
+  menuItemsSupplier?: () => ContextMenuItem[];
+  scrollContextElement: HTMLElement | null;
   position: {
     x: number;
     y: number;
@@ -23,7 +15,6 @@ export class GraphContextMenuCtrl {
 
   constructor($scope: any) {
     this.isVisible = false;
-    this.menuItems = [];
     this.scope = $scope;
   }
 
@@ -58,22 +49,19 @@ export class GraphContextMenuCtrl {
 
   // Sets element which is considered as a scroll context of given context menu.
   // Having access to this element allows scroll event attachement for menu to be closed when user scrolls
-  setScrollContextElement = (el: HTMLElement) => {
+  setScrollContextElement = (el: HTMLElement | null) => {
     this.scrollContextElement = el;
   };
 
   setSource = (source: FlotDataPoint | null) => {
     this.source = source;
   };
+
   getSource = () => {
     return this.source;
   };
 
-  setMenuItems = (items: ContextMenuItem[]) => {
-    this.menuItems = items;
-  };
-
-  getMenuItems = () => {
-    return this.menuItems;
+  setMenuItemsSupplier = (menuItemsSupplier: () => ContextMenuItem[]) => {
+    this.menuItemsSupplier = menuItemsSupplier;
   };
 }

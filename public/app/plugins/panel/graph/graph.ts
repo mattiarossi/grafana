@@ -16,7 +16,6 @@ import GraphTooltip from './graph_tooltip';
 import { ThresholdManager } from './threshold_manager';
 import { TimeRegionManager } from './time_region_manager';
 import { EventManager } from 'app/features/annotations/all';
-import { LinkService, LinkSrv } from 'app/features/panel/panellinks/link_srv';
 import { convertToHistogramData } from './histogram';
 import { alignYLevel } from './align_yaxes';
 import config from 'app/core/config';
@@ -25,12 +24,27 @@ import ReactDOM from 'react-dom';
 import { GraphLegendProps, Legend } from './Legend/Legend';
 
 import { GraphCtrl } from './module';
-import { getValueFormat, ContextMenuItem, ContextMenuGroup, DataLink } from '@grafana/ui';
-import { provideTheme } from 'app/core/utils/ConfigProvider';
-import { toUtc } from '@grafana/ui/src/utils/moment_wrapper';
-import { GraphContextMenuCtrl, FlotDataPoint } from './GraphContextMenuCtrl';
+import { ContextMenuGroup, ContextMenuItem, graphTimeFormatter, graphTimeFormat } from '@grafana/ui';
+import { provideTheme, getCurrentTheme } from 'app/core/utils/ConfigProvider';
+import {
+  toUtc,
+  LinkModelSupplier,
+  DataFrameView,
+  getValueFormat,
+  FieldDisplay,
+  getDisplayProcessor,
+  getFlotPairsConstant,
+  PanelEvents,
+  formattedValueToString,
+  FieldType,
+  DataFrame,
+  getTimeField,
+} from '@grafana/data';
+import { GraphContextMenuCtrl } from './GraphContextMenuCtrl';
 import { TimeSrv } from 'app/features/dashboard/services/TimeSrv';
 import { ContextSrv } from 'app/core/services/context_srv';
+import { getFieldLinksSupplier } from 'app/features/panel/panellinks/linkSuppliers';
+import { CoreEvents } from 'app/types';
 
 const LegendWithThemeProvider = provideTheme(Legend);
 
@@ -50,7 +64,7 @@ class GraphElement {
   timeRegionManager: TimeRegionManager;
   legendElem: HTMLElement;
 
-  constructor(private scope: any, private elem: JQuery, private timeSrv: TimeSrv, private linkSrv: LinkService) {
+  constructor(private scope: any, private elem: JQuery, private timeSrv: TimeSrv) {
     this.ctrl = scope.ctrl;
     this.contextMenu = scope.ctrl.contextMenuCtrl;
     this.dashboard = this.ctrl.dashboard;
@@ -67,12 +81,12 @@ class GraphElement {
     });
 
     // panel events
-    this.ctrl.events.on('panel-teardown', this.onPanelTeardown.bind(this));
-    this.ctrl.events.on('render', this.onRender.bind(this));
+    this.ctrl.events.on(PanelEvents.panelTeardown, this.onPanelTeardown.bind(this));
+    this.ctrl.events.on(PanelEvents.render, this.onRender.bind(this));
 
     // global events
-    appEvents.on('graph-hover', this.onGraphHover.bind(this), scope);
-    appEvents.on('graph-hover-clear', this.onGraphHoverClear.bind(this), scope);
+    appEvents.on(CoreEvents.graphHover, this.onGraphHover.bind(this), scope);
+    appEvents.on(CoreEvents.graphHoverClear, this.onGraphHoverClear.bind(this), scope);
     this.elem.bind('plotselected', this.onPlotSelected.bind(this));
     this.elem.bind('plotclick', this.onPlotClick.bind(this));
 
@@ -90,7 +104,7 @@ class GraphElement {
 
     this.annotations = this.ctrl.annotations || [];
     this.buildFlotPairs(this.data);
-    const graphHeight = this.elem.height();
+    const graphHeight = this.ctrl.height;
     updateLegendValues(this.data, this.panel, graphHeight);
 
     if (!this.panel.legend.show) {
@@ -135,9 +149,6 @@ class GraphElement {
   }
 
   onPanelTeardown() {
-    this.thresholdManager = null;
-    this.timeRegionManager = null;
-
     if (this.plot) {
       this.plot.destroy();
       this.plot = null;
@@ -178,48 +189,49 @@ class GraphElement {
     }
   }
 
-  getContextMenuItems = (flotPosition: { x: number; y: number }, item?: FlotDataPoint): ContextMenuGroup[] => {
-    const dataLinks: DataLink[] = this.panel.options.dataLinks || [];
+  getContextMenuItemsSupplier = (
+    flotPosition: { x: number; y: number },
+    linksSupplier?: LinkModelSupplier<FieldDisplay>
+  ): (() => ContextMenuGroup[]) => {
+    return () => {
+      // Fixed context menu items
+      const items: ContextMenuGroup[] = [
+        {
+          items: [
+            {
+              label: 'Add annotation',
+              icon: 'comment-alt',
+              onClick: () => this.eventManager.updateTime({ from: flotPosition.x, to: null }),
+            },
+          ],
+        },
+      ];
 
-    const items: ContextMenuGroup[] = [
-      {
-        items: [
-          {
-            label: 'Add annotation',
-            icon: 'gicon gicon-annotation',
-            onClick: () => this.eventManager.updateTime({ from: flotPosition.x, to: null }),
-          },
-        ],
-      },
-    ];
+      if (!linksSupplier) {
+        return items;
+      }
 
-    return item
-      ? [
-          ...items,
-          {
-            items: [
-              ...dataLinks.map<ContextMenuItem>(link => {
-                const linkUiModel = this.linkSrv.getDataLinkUIModel(link, this.panel.scopedVariables, {
-                  seriesName: item.series.alias,
-                  datapoint: item.datapoint,
-                });
-                return {
-                  label: linkUiModel.title,
-                  url: linkUiModel.href,
-                  target: linkUiModel.target,
-                  icon: `fa ${linkUiModel.target === '_self' ? 'fa-link' : 'fa-external-link'}`,
-                };
-              }),
-            ],
-          },
-        ]
-      : items;
+      const dataLinks = [
+        {
+          items: linksSupplier.getLinks(this.panel.scopedVars).map<ContextMenuItem>(link => {
+            return {
+              label: link.title,
+              url: link.href,
+              target: link.target,
+              icon: `${link.target === '_self' ? 'link' : 'external-link-alt'}`,
+              onClick: link.onClick,
+            };
+          }),
+        },
+      ];
+
+      return [...items, ...dataLinks];
+    };
   };
 
   onPlotClick(event: JQueryEventObject, pos: any, item: any) {
     const scrollContextElement = this.elem.closest('.view') ? this.elem.closest('.view').get()[0] : null;
     const contextMenuSourceItem = item;
-    let contextMenuItems: ContextMenuItem[];
 
     if (this.panel.xaxis.mode !== 'time') {
       // Skip if panel in histogram or series mode
@@ -237,15 +249,79 @@ class GraphElement {
       return;
     } else {
       this.tooltip.clear(this.plot);
-      contextMenuItems = this.getContextMenuItems(pos, item) as ContextMenuItem[];
+      let linksSupplier: LinkModelSupplier<FieldDisplay> | undefined;
+
+      if (item) {
+        // pickup y-axis index to know which field's config to apply
+        const yAxisConfig = this.panel.yaxes[item.series.yaxis.n === 2 ? 1 : 0];
+        const dataFrame = this.ctrl.dataList[item.series.dataFrameIndex];
+        const field = dataFrame.fields[item.series.fieldIndex];
+        const dataIndex = this.getDataIndexWithNullValuesCorrection(item, dataFrame);
+
+        let links: any[] = this.panel.options.dataLinks || [];
+        if (field.config.links && field.config.links.length) {
+          // Append the configured links to the panel datalinks
+          links = [...links, ...field.config.links];
+        }
+        const fieldConfig = {
+          decimals: yAxisConfig.decimals,
+          links,
+        };
+        const fieldDisplay = getDisplayProcessor({
+          field: { config: fieldConfig, type: FieldType.number },
+          theme: getCurrentTheme(),
+          timeZone: this.dashboard.getTimezone(),
+        })(field.values.get(dataIndex));
+        linksSupplier = links.length
+          ? getFieldLinksSupplier({
+              display: fieldDisplay,
+              name: field.name,
+              view: new DataFrameView(dataFrame),
+              rowIndex: dataIndex,
+              colIndex: item.series.fieldIndex,
+              field: fieldConfig,
+            })
+          : undefined;
+      }
+
       this.scope.$apply(() => {
         // Setting nearest CustomScrollbar element as a scroll context for graph context menu
         this.contextMenu.setScrollContextElement(scrollContextElement);
         this.contextMenu.setSource(contextMenuSourceItem);
-        this.contextMenu.setMenuItems(contextMenuItems);
+        this.contextMenu.setMenuItemsSupplier(this.getContextMenuItemsSupplier(pos, linksSupplier) as any);
         this.contextMenu.toggleMenu(pos);
       });
     }
+  }
+
+  getDataIndexWithNullValuesCorrection(item: any, dataFrame: DataFrame): number {
+    /** This is one added to handle the scenario where we have null values in
+     *  the time series data and the: "visualization options -> null value"
+     *  set to "connected". In this scenario we will get the wrong dataIndex.
+     *
+     *  https://github.com/grafana/grafana/issues/22651
+     */
+    const { datapoint, dataIndex } = item;
+
+    if (!Array.isArray(datapoint) || datapoint.length === 0) {
+      return dataIndex;
+    }
+
+    const ts = datapoint[0];
+    const { timeField } = getTimeField(dataFrame);
+
+    if (!timeField || !timeField.values) {
+      return dataIndex;
+    }
+
+    const field = timeField.values.get(dataIndex);
+
+    if (field === ts) {
+      return dataIndex;
+    }
+
+    const correctIndex = timeField.values.toArray().findIndex(value => value === ts);
+    return correctIndex > -1 ? correctIndex : dataIndex;
   }
 
   shouldAbortRender() {
@@ -275,8 +351,15 @@ class GraphElement {
         .appendTo(this.elem);
     }
 
-    if (this.ctrl.dataWarning) {
-      $(`<div class="datapoints-warning flot-temp-elem">${this.ctrl.dataWarning.title}</div>`).appendTo(this.elem);
+    const { dataWarning } = this.ctrl;
+    if (dataWarning) {
+      const msg = $(`<div class="datapoints-warning flot-temp-elem">${dataWarning.title}</div>`);
+      if (dataWarning.action) {
+        $(`<button class="btn btn-secondary">${dataWarning.actionText}</button>`)
+          .click(dataWarning.action)
+          .appendTo(msg);
+      }
+      msg.appendTo(this.elem);
     }
 
     this.thresholdManager.draw(plot);
@@ -361,7 +444,6 @@ class GraphElement {
     this.thresholdManager.addFlotOptions(options, this.panel);
     this.timeRegionManager.addFlotOptions(options, this.panel);
     this.eventManager.addFlotEvents(this.annotations, options);
-
     this.sortedSeries = this.sortSeries(this.data, this.panel);
     this.callPlot(options, true);
   }
@@ -370,6 +452,10 @@ class GraphElement {
     for (let i = 0; i < data.length; i++) {
       const series = data[i];
       series.data = series.getFlotPairs(series.nullPointMode || this.panel.nullPointMode);
+
+      if (series.transform === 'constant') {
+        series.data = getFlotPairsConstant(series.data, this.ctrl.range);
+      }
 
       // if hidden remove points and disable stack
       if (this.ctrl.hiddenSeries[series.alias]) {
@@ -426,6 +512,7 @@ class GraphElement {
       }
       default: {
         options.series.bars.barWidth = this.getMinTimeStepOfSeries(this.data) / 1.5;
+        options.series.bars.align = 'center';
         this.addTimeAxis(options);
         break;
       }
@@ -437,13 +524,11 @@ class GraphElement {
       this.plot = $.plot(this.elem, this.sortedSeries, options);
       if (this.ctrl.renderError) {
         delete this.ctrl.error;
-        delete this.ctrl.inspector;
       }
     } catch (e) {
       console.log('flotcharts error', e);
       this.ctrl.error = e.message || 'Render Error';
       this.ctrl.renderError = true;
-      this.ctrl.inspector = { error: e };
     }
 
     if (incrementRenderCounter) {
@@ -566,7 +651,8 @@ class GraphElement {
       max: max,
       label: 'Datetime',
       ticks: ticks,
-      timeformat: this.time_format(ticks, min, max),
+      timeformat: graphTimeFormat(ticks, min, max),
+      timeFormatter: graphTimeFormatter(this.dashboard.getTimezone()),
     };
   }
 
@@ -587,19 +673,24 @@ class GraphElement {
   }
 
   addXHistogramAxis(options: any, bucketSize: number) {
-    let ticks, min, max;
+    let ticks: number | number[];
+    let min: number | undefined;
+    let max: number | undefined;
+
     const defaultTicks = this.panelWidth / 50;
 
     if (this.data.length && bucketSize) {
       const tickValues = [];
+
       for (const d of this.data) {
         for (const point of d.data) {
           tickValues[point[0]] = true;
         }
       }
+
       ticks = Object.keys(tickValues).map(v => Number(v));
-      min = _.min(ticks);
-      max = _.max(ticks);
+      min = _.min(ticks)!;
+      max = _.max(ticks)!;
 
       // Adjust tick step
       let tickStep = bucketSize;
@@ -815,45 +906,18 @@ class GraphElement {
       if (!formatter) {
         throw new Error(`Unit '${format}' is not supported`);
       }
-      return formatter(val, axis.tickDecimals, axis.scaledDecimals);
+      return formattedValueToString(formatter(val, axis.tickDecimals, axis.scaledDecimals));
     };
-  }
-
-  time_format(ticks: number, min: number, max: number) {
-    if (min && max && ticks) {
-      const range = max - min;
-      const secPerTick = range / ticks / 1000;
-      // Need have 10 millisecond margin on the day range
-      // As sometimes last 24 hour dashboard evaluates to more than 86400000
-      const oneDay = 86400010;
-      const oneYear = 31536000000;
-
-      if (secPerTick <= 45) {
-        return '%H:%M:%S';
-      }
-      if (secPerTick <= 7200 || range <= oneDay) {
-        return '%H:%M';
-      }
-      if (secPerTick <= 80000) {
-        return '%m/%d %H:%M';
-      }
-      if (secPerTick <= 2419200 || range <= oneYear) {
-        return '%m/%d';
-      }
-      return '%Y-%m';
-    }
-
-    return '%H:%M';
   }
 }
 
 /** @ngInject */
-function graphDirective(timeSrv: TimeSrv, popoverSrv: any, contextSrv: ContextSrv, linkSrv: LinkSrv) {
+function graphDirective(timeSrv: TimeSrv, popoverSrv: any, contextSrv: ContextSrv) {
   return {
     restrict: 'A',
     template: '',
     link: (scope: any, elem: JQuery) => {
-      return new GraphElement(scope, elem, timeSrv, linkSrv);
+      return new GraphElement(scope, elem, timeSrv);
     },
   };
 }

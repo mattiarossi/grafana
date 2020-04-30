@@ -58,10 +58,12 @@ type CreateUserCommand struct {
 	Login          string
 	Name           string
 	Company        string
+	OrgId          int64
 	OrgName        string
 	Password       string
 	EmailVerified  bool
 	IsAdmin        bool
+	IsDisabled     bool
 	SkipOrgSetup   bool
 	DefaultOrgRole string
 
@@ -146,6 +148,8 @@ type SearchUsersQuery struct {
 	Limit      int
 	AuthModule string
 
+	IsDisabled *bool
+
 	Result SearchUserQueryResult
 }
 
@@ -207,16 +211,24 @@ func (user *SignedInUser) HasRole(role RoleType) bool {
 	return user.OrgRole.Includes(role)
 }
 
+func (user *SignedInUser) IsRealUser() bool {
+	return user.UserId != 0
+}
+
 type UserProfileDTO struct {
-	Id             int64    `json:"id"`
-	Email          string   `json:"email"`
-	Name           string   `json:"name"`
-	Login          string   `json:"login"`
-	Theme          string   `json:"theme"`
-	OrgId          int64    `json:"orgId"`
-	IsGrafanaAdmin bool     `json:"isGrafanaAdmin"`
-	IsDisabled     bool     `json:"isDisabled"`
-	AuthModule     []string `json:"authModule"`
+	Id             int64     `json:"id"`
+	Email          string    `json:"email"`
+	Name           string    `json:"name"`
+	Login          string    `json:"login"`
+	Theme          string    `json:"theme"`
+	OrgId          int64     `json:"orgId"`
+	IsGrafanaAdmin bool      `json:"isGrafanaAdmin"`
+	IsDisabled     bool      `json:"isDisabled"`
+	IsExternal     bool      `json:"isExternal"`
+	AuthLabels     []string  `json:"authLabels"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	CreatedAt      time.Time `json:"createdAt"`
+	AvatarUrl      string    `json:"avatarUrl"`
 }
 
 type UserSearchHitDTO struct {
@@ -229,7 +241,8 @@ type UserSearchHitDTO struct {
 	IsDisabled    bool                 `json:"isDisabled"`
 	LastSeenAt    time.Time            `json:"lastSeenAt"`
 	LastSeenAtAge string               `json:"lastSeenAtAge"`
-	AuthModule    AuthModuleConversion `json:"authModule"`
+	AuthLabels    []string             `json:"authLabels"`
+	AuthModule    AuthModuleConversion `json:"-"`
 }
 
 type UserIdDTO struct {
@@ -246,7 +259,7 @@ func (auth *AuthModuleConversion) FromDB(data []byte) error {
 	return nil
 }
 
-// Just a stub, we don't wanna write to database
+// Just a stub, we don't want to write to database
 func (auth *AuthModuleConversion) ToDB() ([]byte, error) {
 	return []byte{}, nil
 }

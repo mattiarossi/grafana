@@ -1,9 +1,11 @@
 import React from 'react';
 import classNames from 'classnames';
+import { Icon } from '@grafana/ui';
 import { PanelModel } from '../../state/PanelModel';
 import { DashboardModel } from '../../state/DashboardModel';
 import templateSrv from 'app/features/templating/template_srv';
 import appEvents from 'app/core/app_events';
+import { CoreEvents } from 'app/types';
 
 export interface DashboardRowProps {
   panel: PanelModel;
@@ -11,18 +13,18 @@ export interface DashboardRowProps {
 }
 
 export class DashboardRow extends React.Component<DashboardRowProps, any> {
-  constructor(props) {
+  constructor(props: DashboardRowProps) {
     super(props);
 
     this.state = {
       collapsed: this.props.panel.collapsed,
     };
 
-    this.props.dashboard.on('template-variable-value-updated', this.onVariableUpdated);
+    this.props.dashboard.on(CoreEvents.templateVariableValueUpdated, this.onVariableUpdated);
   }
 
   componentWillUnmount() {
-    this.props.dashboard.off('template-variable-value-updated', this.onVariableUpdated);
+    this.props.dashboard.off(CoreEvents.templateVariableValueUpdated, this.onVariableUpdated);
   }
 
   onVariableUpdated = () => {
@@ -32,7 +34,7 @@ export class DashboardRow extends React.Component<DashboardRowProps, any> {
   onToggle = () => {
     this.props.dashboard.toggleRow(this.props.panel);
 
-    this.setState(prevState => {
+    this.setState((prevState: any) => {
       return { collapsed: !prevState.collapsed };
     });
   };
@@ -43,7 +45,7 @@ export class DashboardRow extends React.Component<DashboardRowProps, any> {
   };
 
   onOpenSettings = () => {
-    appEvents.emit('show-modal', {
+    appEvents.emit(CoreEvents.showModal, {
       templateHtml: `<row-options row="model.row" on-updated="model.onUpdated()" dismiss="dismiss()"></row-options>`,
       modalClass: 'modal--narrow',
       model: {
@@ -54,7 +56,7 @@ export class DashboardRow extends React.Component<DashboardRowProps, any> {
   };
 
   onDelete = () => {
-    appEvents.emit('confirm-modal', {
+    appEvents.emit(CoreEvents.showConfirmModal, {
       title: 'Delete Row',
       text: 'Are you sure you want to remove this row and all its panels?',
       altActionText: 'Delete row only',
@@ -73,11 +75,6 @@ export class DashboardRow extends React.Component<DashboardRowProps, any> {
       'dashboard-row': true,
       'dashboard-row--collapsed': this.state.collapsed,
     });
-    const chevronClass = classNames({
-      fa: true,
-      'fa-chevron-down': !this.state.collapsed,
-      'fa-chevron-right': this.state.collapsed,
-    });
 
     const title = templateSrv.replaceWithText(this.props.panel.title, this.props.panel.scopedVars);
     const count = this.props.panel.panels ? this.props.panel.panels.length : 0;
@@ -87,7 +84,7 @@ export class DashboardRow extends React.Component<DashboardRowProps, any> {
     return (
       <div className={classes}>
         <a className="dashboard-row__title pointer" onClick={this.onToggle}>
-          <i className={chevronClass} />
+          <Icon name={this.state.collapsed ? 'angle-right' : 'angle-down'} />
           {title}
           <span className="dashboard-row__panel_count">
             ({count} {panels})
@@ -96,10 +93,10 @@ export class DashboardRow extends React.Component<DashboardRowProps, any> {
         {canEdit && (
           <div className="dashboard-row__actions">
             <a className="pointer" onClick={this.onOpenSettings}>
-              <i className="gicon gicon-cog" />
+              <Icon name="cog" />
             </a>
             <a className="pointer" onClick={this.onDelete}>
-              <i className="fa fa-trash" />
+              <Icon name="trash-alt" />
             </a>
           </div>
         )}

@@ -1,84 +1,118 @@
-import { Task, TaskRunner } from './task';
-// @ts-ignore
-import execa = require('execa');
-import path = require('path');
-import fs = require('fs');
-import glob = require('glob');
-import * as rollup from 'rollup';
-import { inputOptions, outputOptions } from '../../config/rollup.plugin.config';
-
 import { useSpinner } from '../utils/useSpinner';
-import { Linter, Configuration, RuleFailure } from 'tslint';
 import { testPlugin } from './plugin/tests';
-interface PrecommitOptions {}
+import { Task, TaskRunner } from './task';
+import rimrafCallback from 'rimraf';
+import { resolve as resolvePath } from 'path';
+import { promisify } from 'util';
+import globby from 'globby';
+import execa from 'execa';
+import { constants as fsConstants, promises as fs } from 'fs';
+import { CLIEngine } from 'eslint';
+import { bundlePlugin as bundleFn, PluginBundleOptions } from './plugin/bundle';
 
-// @ts-ignore
-export const clean = useSpinner<void>('Cleaning', async () => await execa('rimraf', ['./dist']));
+const { access, copyFile } = fs;
+const { COPYFILE_EXCL } = fsConstants;
+const rimraf = promisify(rimrafCallback);
+
+interface PluginBuildOptions {
+  coverage: boolean;
+}
+
+interface Fixable {
+  fix?: boolean;
+}
+
+export const bundlePlugin = useSpinner<PluginBundleOptions>('Compiling...', async options => await bundleFn(options));
+
+export const clean = useSpinner<void>('Cleaning', async () => await rimraf(`${process.cwd()}/dist`));
+
+const copyIfNonExistent = (srcPath: string, destPath: string) =>
+  copyFile(srcPath, destPath, COPYFILE_EXCL)
+    .then(() => console.log(`Created: ${destPath}`))
+    .catch(error => {
+      if (error.code !== 'EEXIST') {
+        throw error;
+      }
+    });
+
+export const prepare = useSpinner<void>('Preparing', async () => {
+  await Promise.all([
+    // Copy only if local tsconfig does not exist.  Otherwise this will work, but have odd behavior
+    copyIfNonExistent(
+      resolvePath(__dirname, '../../config/tsconfig.plugin.local.json'),
+      resolvePath(process.cwd(), 'tsconfig.json')
+    ),
+    // Copy only if local prettierrc does not exist.  Otherwise this will work, but have odd behavior
+    copyIfNonExistent(
+      resolvePath(__dirname, '../../config/prettier.plugin.rc.js'),
+      resolvePath(process.cwd(), '.prettierrc.js')
+    ),
+  ]);
+
+  // Nothing is returned
+});
 
 // @ts-ignore
 const typecheckPlugin = useSpinner<void>('Typechecking', async () => {
   await execa('tsc', ['--noEmit']);
 });
 
+const getTypescriptSources = () => globby(resolvePath(process.cwd(), 'src/**/*.+(ts|tsx)'));
+
 // @ts-ignore
-const lintPlugin = useSpinner<void>('Linting', async () => {
-  let tsLintConfigPath = path.resolve(process.cwd(), 'tslint.json');
-  if (!fs.existsSync(tsLintConfigPath)) {
-    tsLintConfigPath = path.resolve(__dirname, '../../config/tslint.plugin.json');
+const getStylesSources = () => globby(resolvePath(process.cwd(), 'src/**/*.+(scss|css)'));
+
+export const lintPlugin = useSpinner<Fixable>('Linting', async ({ fix } = {}) => {
+  try {
+    // Show a warning if the tslint file exists
+    await access(resolvePath(process.cwd(), 'tslint.json'));
+    console.log('\n');
+    console.log('--------------------------------------------------------------');
+    console.log('NOTE: @grafana/toolkit has migrated to use eslint');
+    console.log('Update your configs to use .eslintrc rather than tslint.json');
+    console.log('--------------------------------------------------------------');
+  } catch {
+    // OK: tslint does not exist
   }
-  const globPattern = path.resolve(process.cwd(), 'src/**/*.+(ts|tsx)');
-  const sourcesToLint = glob.sync(globPattern);
-  const options = {
-    fix: true, // or fail
-    formatter: 'json',
-  };
 
-  const configuration = Configuration.findConfiguration(tsLintConfigPath).results;
+  // @todo should remove this because the config file could be in a parent dir or within package.json
+  const configFile = await globby(resolvePath(process.cwd(), '.eslintrc?(.cjs|.js|.json|.yaml|.yml)')).then(
+    filePaths => {
+      if (filePaths.length > 0) {
+        return filePaths[0];
+      } else {
+        return resolvePath(__dirname, '../../config/eslint.plugin.json');
+      }
+    }
+  );
 
-  const lintResults = sourcesToLint
-    .map(fileName => {
-      const linter = new Linter(options);
-      const fileContents = fs.readFileSync(fileName, 'utf8');
-      linter.lint(fileName, fileContents, configuration);
-      return linter.getResult();
-    })
-    .filter(result => {
-      return result.errorCount > 0 || result.warningCount > 0;
-    });
+  const cli = new CLIEngine({
+    configFile,
+    fix,
+  });
 
-  if (lintResults.length > 0) {
+  const report = cli.executeOnFiles(await getTypescriptSources());
+
+  if (fix) {
+    CLIEngine.outputFixes(report);
+  }
+
+  const { errorCount, results, warningCount } = report;
+
+  if (errorCount > 0 || warningCount > 0) {
+    const formatter = cli.getFormatter();
     console.log('\n');
-    const failures = lintResults.reduce<RuleFailure[]>((failures, result) => {
-      return [...failures, ...result.failures];
-    }, []);
-    failures.forEach(f => {
-      // tslint:disable-next-line
-      console.log(
-        `${f.getRuleSeverity() === 'warning' ? 'WARNING' : 'ERROR'}: ${f.getFileName().split('src')[1]}[${
-          f.getStartPosition().getLineAndCharacter().line
-        }:${f.getStartPosition().getLineAndCharacter().character}]: ${f.getFailure()}`
-      );
-    });
+    console.log(formatter(results));
     console.log('\n');
-    throw new Error(`${failures.length} linting errors found in ${lintResults.length} files`);
+    throw new Error(`${errorCount + warningCount} linting errors found in ${results.length} files`);
   }
 });
 
-const bundlePlugin = useSpinner<void>('Bundling plugin', async () => {
-  // @ts-ignore
-  const bundle = await rollup.rollup(inputOptions());
-  // TODO: we can work on more verbose output
-  await bundle.generate(outputOptions);
-  await bundle.write(outputOptions);
-});
-
-const pluginBuildRunner: TaskRunner<PrecommitOptions> = async () => {
-  await clean();
-  // @ts-ignore
-  await lintPlugin();
-  await testPlugin({ updateSnapshot: false, coverage: false });
-  // @ts-ignore
-  await bundlePlugin();
+export const pluginBuildRunner: TaskRunner<PluginBuildOptions> = async ({ coverage }) => {
+  await prepare();
+  await lintPlugin({ fix: false });
+  await testPlugin({ updateSnapshot: false, coverage, watch: false });
+  await bundlePlugin({ watch: false, production: true });
 };
 
-export const pluginBuildTask = new Task<PrecommitOptions>('Build plugin', pluginBuildRunner);
+export const pluginBuildTask = new Task<PluginBuildOptions>('Build plugin', pluginBuildRunner);
